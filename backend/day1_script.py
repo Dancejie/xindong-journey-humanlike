@@ -8,6 +8,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
+from backend.agent_prompt import runtime_character_card, select_runtime_few_shots
 from backend.game_content import (
     CHARACTER_CARD_MAP,
     CHARACTER_MAP,
@@ -107,14 +108,7 @@ def _ensemble_context(perspective_id: str, cast_ids: list[str] | None = None) ->
 
 
 def _card_for_prompt(card: dict[str, Any]) -> dict[str, Any]:
-    result = deepcopy(card)
-    for presentation_field in ("accent", "portrait", "video"):
-        result.pop(presentation_field, None)
-    facts = result.get("sourceProfile", {}).get("facts", {})
-    occupation = facts.get("occupation")
-    if isinstance(occupation, str) and any(term in occupation for term in ("待剧情", "待正式确认", "运行时职业待")):
-        facts.pop("occupation", None)
-    return result
+    return runtime_character_card(card)
 
 
 def _public_cast_card(card: dict[str, Any]) -> dict[str, Any]:
@@ -203,6 +197,7 @@ def build_day1_script_messages(snapshot: dict[str, Any]) -> list[dict[str, str]]
 不得出现任何钥匙任务。不得编造人物卡外的创伤、诊断、前任、节目身份、职业或会改变任务因果的关键道具；行李、厨房、座位等可逆日常布景可以具体。
 可以根据主角完整人物卡调整观察方式和选项措辞；其他嘉宾只能使用给出的公共卡。
 每个选项都是主角此刻真正会说或会做的一句话，不是编剧写给玩家看的策略说明。必须体现主角 voice.sentenceShape、preferredMoves、boundaries 与 fewShots 中的可观察决策结构，但不得复刻 fewShots 原句。
+	retrievedFewShotStructures 是按第一天场景检索出的该主角原创微场景；只迁移 cue→判断→策略→表达→修复的顺序，不得逐字复刻 dialogueExample，不得追溯或模仿研究来源。
 	三个选项要形成三种具体、自然且彼此有取舍的行动，禁止“先赢、确认目标、确立关系、看清一个人、建立共同信任”这类机械总结。不要在 label 或 hint 里解释后台目的，也不要只是把骨架 meaning 换一两个同义词。
 	每个有三选项的节点，至少一个 label 要带出只有这位主角才会想到的观察、兴趣或表达动作；另外两个也必须服从其 sentenceShape。把主角名字换成别人后若仍毫无违和，说明人物味不足，必须重写。
 	例如主角善用画面联想，就先用一个眼前画面落到具体邀请；主角偏理性，就用可回答的问题或可验证的小行动。无论哪种人物，都要像真人当场开口，而不是项目经理列方案。
@@ -226,10 +221,11 @@ speakerId 只能填写以下一个英文字符串：narrator、program，或同�
         "independentInterest": protagonist["drives"]["independentInterest"],
         "currentGoals": protagonist["drives"]["currentGoals"],
         "boundaries": protagonist["psychology"]["boundaries"],
-        "fewShotDecisionStructuresOnly": [
-            {"context": shot["context"], "attitude": shot["attitude"], "replyShapeReference": shot["reply"]}
-            for shot in protagonist["fewShots"]
-        ],
+        "retrievedFewShotStructures": select_runtime_few_shots(
+            protagonist,
+            "第一天 入住 自我介绍 破冰 私聊 晚餐 心动短信",
+            {"nodeId": "day1-full", "storyStage": "第一天完整台本"},
+        ),
     }
     prompt = (
         "主角语言硬约束（写选项时优先看这一段）：\n" + json.dumps(protagonist_style, ensure_ascii=False) +
@@ -423,6 +419,16 @@ def build_day1_node_messages(snapshot: dict[str, Any], node_id: str) -> list[dic
         if item.get("characterId") in focus_ids
     ]
     blueprint = NODES[node_id]
+    recent_player_copy = " ".join(
+        str(item.get("customText") or item.get("playerExpression") or "")
+        for item in state.get("choiceHistory", [])[-3:]
+        if isinstance(item, dict)
+    )
+    retrieved_few_shots = select_runtime_few_shots(
+        protagonist,
+        " ".join((node_id, str(blueprint.get("text") or ""), str(blueprint.get("action") or ""), recent_player_copy)),
+        {"nodeId": node_id, "storyStage": str(blueprint.get("chapter") or ""), "sceneText": blueprint.get("text")},
+    )
     contract = {
         "node": {
             "title": "4-36字真人恋综小标题",
@@ -442,6 +448,7 @@ def build_day1_node_messages(snapshot: dict[str, Any], node_id: str) -> list[dic
     system = """你是《心动之旅》的现场台本编辑。只改写当前一个节点的可见文案，不决定路线、任务结果或媒体路径。
 playerIdentity 是最高优先级硬约束：玩家正在扮演 protagonistId 对应的人物。“你”就是该人物本人，场内绝不存在一个独立于“你”的同名 NPC。不得写“你和主角名”、不得让主角名转身等你或对你说话，也不得给主角虚构职业。
 	必须结合主角完整人物卡、已经发生的选择、当前事件目标和相关人物记忆写成真人恋综口语；不能把同一套固定台本只替换名字。
+	retrievedFewShotStructures 是服务端按当前 node、上一轮玩家原话与现场检索出的 2-3 条该主角原创微场景。所有旁白选项必须迁移其可观察 cue→判断→策略→表达→修复结构，但不得逐字复刻 dialogueExample，不得调用或模仿研究来源原文。
 	choiceHistory 中的 customText/playerExpression 是玩家在上一步亲自输入的原话，只能作为“主角刚刚这样说/这样选择”的引用证据；不得把其中尚未发生的愿望、猜测或夸张表述升级为客观场景事实，也不得改变确定性路线、任务结果或人物关系。
 title/text 清楚说明刚发生什么、现场在哪里、玩家现在要做什么。每个选项是主角当场真会说或做的一句话，三项具体且有真实取舍。
 textBeats 必须把旁白拆成2-4个短段，每段只承担一个信息：先承接上一幕，再交代现场或规则，最后落到玩家动作。长文不能整段作为唯一beat。
@@ -481,6 +488,7 @@ choice id、intent、next、patch、节点顺序、目标规则和媒体全部�
             },
         },
         "protagonistCard": protagonist_for_prompt,
+        "retrievedFewShotStructures": retrieved_few_shots,
         "ensembleContext": _ensemble_context(perspective_id, cast_ids),
         "publicCast": [_public_cast_card(CHARACTER_CARD_MAP[character_id]) for character_id in cast_ids if character_id != perspective_id],
         "focusCharacterIds": sorted(focus_ids), "relevantCharacterMemories": relevant_memories,

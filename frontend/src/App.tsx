@@ -774,10 +774,18 @@ function LoginGate({ message }: { message: string }) {
 
 const MBTI_ORDER = ['INTJ', 'ISFJ', 'ESTP', 'INTP', 'INFJ', 'ENFP', 'ESFJ', 'ISTP']
 
-function Landing({ characters, onStart, busy }: { characters: Character[]; onStart: (mbti: string, perspectiveCharacterId: string) => void; busy: boolean }) {
+const STARTUP_STAGE_LABELS = [
+  '正在创建你的本局…',
+  '正在安排同住嘉宾…',
+  '正在准备第一幕…',
+  '连接比平时稍慢，仍在为你开启…',
+]
+
+function Landing({ characters, onStart, busy, startError }: { characters: Character[]; onStart: (mbti: string, perspectiveCharacterId: string) => void; busy: boolean; startError?: string }) {
   const [phase, setPhase] = useState<'intro' | 'mbti' | 'role'>('intro')
   const [selectedMbti, setSelectedMbti] = useState('')
   const [selectedId, setSelectedId] = useState('')
+  const [startupStage, setStartupStage] = useState(0)
   const availableMbtis = useMemo(() => {
     const values = new Set(characters.map(character => character.mbti).filter(Boolean))
     return [...values].sort((left, right) => {
@@ -796,10 +804,25 @@ function Landing({ characters, onStart, busy }: { characters: Character[]; onSta
     setSelectedId('')
     setPhase('role')
   }
+  useEffect(() => {
+    if (!busy) {
+      setStartupStage(0)
+      return
+    }
+    setStartupStage(0)
+    const timers = [
+      window.setTimeout(() => setStartupStage(1), 900),
+      window.setTimeout(() => setStartupStage(2), 2800),
+      window.setTimeout(() => setStartupStage(3), 6500),
+    ]
+    return () => timers.forEach(timer => window.clearTimeout(timer))
+  }, [busy])
   return (
     <main className={`landing landing--${phase}`}>
       <div className="landing-media" aria-hidden="true">
-        <SceneMedia src={backgroundVideo} poster={backgroundPoster} active soundEnabled={false} />
+        {busy && backgroundPoster
+          ? <div className="scene-media scene-media--startup-poster"><img className="scene-media__poster" src={backgroundPoster} alt="" /></div>
+          : <SceneMedia src={backgroundVideo} poster={backgroundPoster} active soundEnabled={false} />}
         <div className="landing-scrim" />
         <div className="sun-glow" />
       </div>
@@ -843,7 +866,7 @@ function Landing({ characters, onStart, busy }: { characters: Character[]; onSta
         </section>
         <section className="role-step" aria-label={`选择 ${selectedMbti} 角色`}>
           <div className="role-picker">
-            {roleOptions.map(character => <button key={character.id} className={character.id === selected?.id ? 'active' : ''} onClick={() => setSelectedId(character.id)} style={{ '--accent': character.accent } as React.CSSProperties} aria-pressed={character.id === selected?.id} aria-label={`选择${character.gender || ''}角色${character.name}，${publicOccupation(character)}，${character.tagline}`}>
+            {roleOptions.map(character => <button key={character.id} className={character.id === selected?.id ? 'active' : ''} disabled={busy} onClick={() => setSelectedId(character.id)} style={{ '--accent': character.accent } as React.CSSProperties} aria-pressed={character.id === selected?.id} aria-label={`选择${character.gender || ''}角色${character.name}，${publicOccupation(character)}，${character.tagline}`}>
               <img src={character.portrait} alt={`${character.name}头像`} />
               <span><em>{character.gender || '嘉宾'}</em><b>{character.name}</b><small>{publicOccupation(character)}</small><small>{character.tagline}</small></span><i>→</i>
             </button>)}
@@ -854,9 +877,12 @@ function Landing({ characters, onStart, busy }: { characters: Character[]; onSta
             <p>{selected.independentInterest}</p>
             <dl><div><dt>表达方式</dt><dd>{selected.voice}</dd></div><div><dt>关系边界</dt><dd>{selected.boundary}</dd></div></dl>
             {selected.mediaStatus === 'planned' && <p className="static-media-note">当前以静态人物图进入；动态形象准备完成后会自动启用，不会借用其他嘉宾的视频。</p>}
-            <button className="primary-button start-button" disabled={busy} onClick={() => { unlockAudioIntent(); onStart(selected.mbti, selected.id) }}><span>{busy ? '正在开启…' : `跟随${selected.name}进入小屋`}</span><i>→</i></button>
+            <button className="primary-button start-button" disabled={busy} onClick={() => { unlockAudioIntent(); onStart(selected.mbti, selected.id) }}><span>{busy ? STARTUP_STAGE_LABELS[startupStage] : startError ? '重新尝试开启' : `跟随${selected.name}进入小屋`}</span><i>{busy ? '···' : '→'}</i></button>
+            {(busy || startError) && <p className={`role-start-feedback ${startError ? 'role-start-feedback--error' : ''}`} role={startError ? 'alert' : 'status'} aria-live="polite">
+              {startError || (startupStage < 3 ? '正在建立本局，不会等待视频下载，也无需重复点击。' : '人物图片会先陪你等待；动态画面进入剧情后再加载。')}
+            </p>}
           </section> : <div className="role-empty glass-card"><span>选择一位角色</span><p>点击上方的男性或女性角色，先读完人物详情，再决定是否以 TA 的视角开局。</p></div>}
-          <button className="selection-back" onClick={() => { setSelectedId(''); setPhase('mbti') }}>← 重新选择 MBTI</button>
+          <button className="selection-back" disabled={busy} onClick={() => { setSelectedId(''); setPhase('mbti') }}>← 重新选择 MBTI</button>
         </section>
       </>}
     </main>
@@ -1698,6 +1724,8 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [authError, setAuthError] = useState('')
+  const [startError, setStartError] = useState('')
+  const startRequestInFlight = useRef(false)
   useEffect(() => {
     api<{ characters: Character[]; view: View | null }>('/api/bootstrap')
       .then(data => { setCharacters(data.characters); setView(new URLSearchParams(location.search).get('intro') === '1' ? null : data.view) })
@@ -1706,13 +1734,29 @@ export default function App() {
   }, [])
   const cast = useMemo(() => view?.characters || characters, [view, characters])
   const start = async (mbti: string, perspectiveCharacterId?: string) => {
+    if (startRequestInFlight.current) return
+    startRequestInFlight.current = true
     setBusy(true)
-    try { setView(await api<View>('/api/runs', { method: 'POST', body: JSON.stringify({ mbti, perspectiveCharacterId }) })) }
-    catch (error) { setAuthError((error as Error).message) }
-    finally { setBusy(false) }
+    setStartError('')
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 25_000)
+    try {
+      setView(await api<View>('/api/runs', { method: 'POST', body: JSON.stringify({ mbti, perspectiveCharacterId }), signal: controller.signal }))
+    } catch (error) {
+      const requestError = error as Error
+      const message = requestError.name === 'AbortError'
+        ? '开启等待超过 25 秒，连接已停止。请检查网络后再试；刚才的按钮只提交了一次。'
+        : requestError.message
+      if (view) setAuthError(message)
+      else setStartError(message)
+    } finally {
+      window.clearTimeout(timeout)
+      startRequestInFlight.current = false
+      setBusy(false)
+    }
   }
   if (loading) return <Loading />
   if (authError) return <LoginGate message={authError} />
-  if (!view) return <Landing characters={cast} onStart={start} busy={busy} />
+  if (!view) return <Landing characters={cast} onStart={start} busy={busy} startError={startError} />
   return <Game view={view} onView={setView} onRestart={() => start(view.snapshot.player.mbti, view.snapshot.player.perspectiveCharacterId)} />
 }

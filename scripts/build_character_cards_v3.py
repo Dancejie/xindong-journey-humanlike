@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "content" / "character_cards.v2.json"
 TARGET = ROOT / "content" / "character_cards.v3.json"
 SOURCES_TARGET = ROOT / "content" / "research_sources.v3.json"
+HUMANLIKE_OVERRIDE = ROOT / "content" / "character_fewshot_overrides.v1.json"
 
 
 SOURCE_PROFILES = {
@@ -86,13 +87,13 @@ TYPE_STYLES = {
 
 
 LITERARY_ANCHORS = {
-    "shenmo": {"sourceRefId": "source.monte-cristo", "work": "The Count of Monte Cristo", "microExcerpt": "Wait and hope.", "observablePattern": "把漫长等待变成有结构的行动与克制", "transferRule": "只迁移耐心、布局和低温表达，不迁移复仇身份或原句。"},
-    "linyu": {"sourceRefId": "source.little-women", "work": "Little Women", "microExcerpt": "I do my best, Meg.", "observablePattern": "照料者的努力被忽略时，用极少的话暴露真实受伤", "transferRule": "先写具体劳动，再让边界落在互惠上。"},
-    "chengye": {"sourceRefId": "source.three-musketeers", "work": "The Three Musketeers", "microExcerpt": "All for one, one for all.", "observablePattern": "用共同冒险、誓言和现场行动建立结盟", "transferRule": "把豪侠感转成现代、有退出权的共同挑战。"},
-    "guyan": {"sourceRefId": "source.study-in-scarlet", "work": "A Study in Scarlet", "microExcerpt": "I have made a special study of cigar ashes.", "observablePattern": "由具体痕迹建立假设，并区分已知与仍然模糊之处", "transferRule": "推理必须落回人物感受或下一步，不能炫技。"},
-    "jiangwan": {"sourceRefId": "source.jane-eyre", "work": "Jane Eyre", "microExcerpt": "I am no bird; and no net ensnares me.", "observablePattern": "理解与亲密不能取消主体意志和离开的权利", "transferRule": "受压时从温柔洞察切换为清楚边界。"},
-    "jiangmi": {"sourceRefId": "source.anne-green-gables", "work": "Anne of Green Gables", "microExcerpt": "Tomorrow is a new day with no mistakes in it yet.", "observablePattern": "高强度想象、迅速联想，并把失误转成新的可能", "transferRule": "保留活力和修复能力，禁止幼态化或照抄句式。"},
-    "sunnian": {"sourceRefId": "source.little-women", "work": "Little Women", "microExcerpt": "We work hard enough to earn it.", "observablePattern": "日常劳动、家庭秩序和个人愿望之间持续拉扯", "transferRule": "让照顾可见，也让被照顾者承担回馈。"},
+    "shenmo": {"sourceRefId": "source.monte-cristo", "work": "The Count of Monte Cristo", "microExcerpt": None, "observablePattern": "把漫长等待变成有结构的行动与克制", "transferRule": "只迁移耐心、布局和低温表达，不迁移复仇身份或原句。"},
+    "linyu": {"sourceRefId": "source.little-women", "work": "Little Women", "microExcerpt": None, "observablePattern": "照料者的努力被忽略时，用极少的话暴露真实受伤", "transferRule": "先写具体劳动，再让边界落在互惠上。"},
+    "chengye": {"sourceRefId": "source.three-musketeers", "work": "The Three Musketeers", "microExcerpt": None, "observablePattern": "用共同冒险、誓言和现场行动建立结盟", "transferRule": "把豪侠感转成现代、有退出权的共同挑战。"},
+    "guyan": {"sourceRefId": "source.study-in-scarlet", "work": "A Study in Scarlet", "microExcerpt": None, "observablePattern": "由具体痕迹建立假设，并区分已知与仍然模糊之处", "transferRule": "推理必须落回人物感受或下一步，不能炫技。"},
+    "jiangwan": {"sourceRefId": "source.jane-eyre", "work": "Jane Eyre", "microExcerpt": None, "observablePattern": "理解与亲密不能取消主体意志和离开的权利", "transferRule": "受压时从温柔洞察切换为清楚边界。"},
+    "jiangmi": {"sourceRefId": "source.anne-green-gables", "work": "Anne of Green Gables", "microExcerpt": None, "observablePattern": "高强度想象、迅速联想，并把失误转成新的可能", "transferRule": "保留活力和修复能力，禁止幼态化或照抄句式。"},
+    "sunnian": {"sourceRefId": "source.little-women", "work": "Little Women", "microExcerpt": None, "observablePattern": "日常劳动、家庭秩序和个人愿望之间持续拉扯", "transferRule": "让照顾可见，也让被照顾者承担回馈。"},
     "chensu": {"sourceRefId": "source.mysterious-island", "work": "The Mysterious Island", "microExcerpt": None, "observablePattern": "先盘点资源、定位故障、动手造出可用方案", "transferRule": "用动作承担情感成本，但动作不能替代同意。"},
 }
 
@@ -286,7 +287,11 @@ def build_counterpart(package: dict, spec: dict) -> dict:
     card.update({
         "id": spec["id"], "names": {"primary": spec["name"], "aliases": [], "pronouns": [spec["pronoun"]]},
         "tagline": spec["tagline"], "accent": spec["accent"],
-        "portrait": f"/media/portraits-placeholders/{spec['id']}.svg", "video": "",
+        # R6 now has an identity-specific static anchor for every counterpart.
+        # Keep the card's poster on that same person; the public projection may
+        # additionally bind the approved CHAR-*-portrait video from the runtime
+        # manifest, but must never fall back to a silhouette or another guest.
+        "portrait": f"/media/portraits/{spec['id']}.jpg", "video": "",
         "media": {
             "status": "planned", "fallbackKind": "static-character-placeholder", "generationRequired": True,
             "provenanceStatus": "pending-original-generation", "rightsStatus": "pending-review", "runtimeStatus": "blocked",
@@ -321,6 +326,36 @@ def build_counterpart(package: dict, spec: dict) -> dict:
     for anchor in card["researchAnchors"]:
         anchor["transferRule"] = "只迁移同MBTI的可观察认知偏好；人物事实、语气、职业与关系历史以本卡为准。"
     return card
+
+
+def apply_humanlike_overlay(package: dict) -> dict:
+    """Apply the audited few-shot layer after the legacy v3 builders run.
+
+    The overlay is the reproducible source of truth for dialogue examples and
+    research provenance.  It deliberately keeps the legacy runtime keys
+    ``context/player/attitude/reply`` alongside the structured authoring fields.
+    """
+    if not HUMANLIKE_OVERRIDE.exists():
+        return {}
+
+    overlay = json.loads(HUMANLIKE_OVERRIDE.read_text(encoding="utf-8"))
+    card_index = {card["id"]: card for card in package["cards"]}
+    patches = overlay.get("cardPatches", [])
+    patch_ids = [patch["cardId"] for patch in patches]
+    if len(patch_ids) != len(set(patch_ids)):
+        raise ValueError("duplicate cardId in humanlike overlay")
+    unknown_ids = sorted(set(patch_ids) - set(card_index))
+    if unknown_ids:
+        raise ValueError(f"unknown cardId in humanlike overlay: {unknown_ids}")
+
+    for patch in patches:
+        card = card_index[patch["cardId"]]
+        for field in ("fewShots", "sourceRefIds", "researchAnchors"):
+            card[field] = deepcopy(patch[field])
+
+    package["contentVersion"] = overlay["contentVersion"]
+    package["status"] = "authoring-reviewed"
+    return overlay
 
 
 def main() -> None:
@@ -359,6 +394,7 @@ def main() -> None:
         "sameMbtiCounterpartAllowed": True,
         "mediaPolicy": "新角色在approved动态素材到位前只使用明确标记的静态占位；运行时不触发生成。",
     }
+    humanlike_overlay = apply_humanlike_overlay(package)
     TARGET.write_text(json.dumps(package, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     old_sources = json.loads((ROOT / "content" / "research_sources.v2.json").read_text(encoding="utf-8"))
@@ -377,7 +413,11 @@ def main() -> None:
     ]
     for source in sources["sources"]:
         if source["id"] == "source.mysterious-island":
-            source["locator"] = "https://www.gutenberg.org/ebooks/8993"
+            source["locator"] = "https://www.gutenberg.org/ebooks/1268"
+    if humanlike_overlay:
+        audited_research = humanlike_overlay["researchPatch"]
+        for field in ("schemaVersion", "contentVersion", "status", "notes", "sources", "evidenceCards", "rightsReview"):
+            sources[field] = deepcopy(audited_research[field])
     SOURCES_TARGET.write_text(json.dumps(sources, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"built {len(package['cards'])} cards -> {TARGET.name}")
 

@@ -13,7 +13,7 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parent.parent
 RELATIONSHIP_AXES = ("trust", "affection", "respect", "fear", "debt", "attraction", "resentment")
 ATTITUDES = {"warm", "curious", "guarded", "challenging", "vulnerable", "softened", "uncertain", "honest", "moved", "careful", "steady", "boundary"}
-CONTENT_VERSION = "3.7.0-dual-roster-gender-rotation"
+CONTENT_VERSION = "3.8.0-humanlike-fewshots"
 CHAT_CONTEXT_VERSION = 1
 CHAT_LOCATIONS = {
     "hotel-entrance": {"name": "酒店玄关", "supportsGroup": True},
@@ -1436,22 +1436,22 @@ def _fallback_typed_suggestions(
         "anonymous-letter": "如果今晚还能发一条短信，我会写：想继续认识你。",
     }.get(node_id, f"我叫{player_name}。回到现在这件事，你愿意告诉我你的想法吗？")
     voice_copy = {
-        "shenmo": ("你刚才提到这个习惯，它每次都有效，还是今天刚好有效？", f"先说清一件事：{target_name}，要不要和我一起准备晚餐，再商量分工？", "如果答案还没想好，你通常会先做哪一件小事？"),
-        "linyu": ("你刚才说这样会放松，那我现在做什么会让你更自在一点？", f"{target_name}，要不要一起去厨房准备晚餐？你先挑顺手的，我来补另一边。", "别人照顾你时，什么样的分寸最舒服？"),
-        "chengye": ("你刚才说的那个办法，光说不算——现在最想先试哪一步？", f"{target_name}，别站着聊了，要不要一起去厨房准备晚餐，分工边做边定？", "别人第一次误会你时，你会解释还是直接做给对方看？"),
-        "guyan": ("你刚才提到这个习惯，我确认一下：它是在躲开人，还是帮你回到人群？", f"如果目标是继续聊，{target_name}，要不要一起准备晚餐？分工可以边做边调整。", "有没有哪次你原本的判断，后来被一个人改掉了？"),
-        "jiangwan": ("你刚才说到这件事，我这样理解对吗：你需要的不是热闹，而是有人不催你？", f"如果你愿意，我们今晚一起准备晚餐，先从你顺手的部分商量分工。", "什么样的一句追问，会让你觉得自己真的被听见？"),
-        "jiangmi": ("你刚才那句话有个画面——如果把它录成声音，最先听见的会是什么？", f"{target_name}，走，一起去厨房准备晚餐吧；你挑一件想做的，我跟上。", "安静下来以后，你最希望身边的人做什么？"),
-        "sunnian": ("你刚才说这样会安心，那有没有一件事也想让别人替你做？", f"{target_name}，今晚一起准备晚餐吧。你告诉我需要哪一部分，我来搭手。", "如果今天不用照顾任何人，你最想把时间留给什么？"),
-        "chensu": ("你刚才说的我听见了；如果现在就做一步，你会先从哪儿下手？", f"{target_name}，一起准备晚餐吧。你选备菜还是摆桌，剩下的我来。", "有什么事你宁愿先做，也一直不太会开口解释？"),
-        "luyao": ("你刚才提到这件事，我想确认一下：现在更需要我听完，还是一起找办法？", f"先说我的选择：{target_name}，今晚要不要一起准备晚餐？分工可以一起改。", "有没有哪次临时改变主意，反而让你更确定自己在意什么？"),
-        "yecheng": ("你刚才说到这个细节，我记住了；那你希望别人怎样回应才会舒服？", f"{target_name}，今晚一起准备晚餐好吗？你先说想做哪部分，我负责另一边。", "哪一种被记住的小事，会让你觉得对方真的在听？"),
-        "tangli": ("你刚才说可以试，我再确认一次：哪个动作要慢，什么时候必须停？", f"{target_name}，今晚一起准备晚餐吧。先说好，累了就换手，别硬扛。", "如果今天不用照顾整个现场，你最想让谁替你接住哪一步？"),
-        "wenxu": ("你刚才那句我可能只理解了七成：你更在意结果，还是对方愿意一起修正？", f"我先不等答案完整了：{target_name}，要不要一起准备晚餐，边做边调整分工？", "有没有一个你明知不够严谨，却还是想诚实说出的答案？"),
-        "hechuan": ("你刚才提到那一段停顿，我的理解可能不准；你愿意把真正重要的部分补回来吗？", f"这次我先说自己的选择：{target_name}，要不要和我一起准备晚餐？", "如果不能只做倾听的人，你最希望别人先认识你的哪一面？"),
-        "peiran": ("你刚才说这个点子很好玩，那如果不分输赢，你最想把哪一步留下？", f"{target_name}，要不要一起把晚餐准备变成一个小合作？你不想热闹也可以直说。", "游戏停下来以后，你希望身边的人继续问什么？"),
-        "lichuan": ("你刚才说这样会轻松，那这次你愿意具体接走哪一部分？", f"{target_name}，今晚一起准备晚餐吧。我们各认一份，也把收尾算进去。", "如果不用照顾整张桌子，你最想把一个座位留给谁？"),
-        "qiaolan": ("你刚才说的问题我听见了；先别替你决定，要我把哪两个做法摆出来？", f"{target_name}，一起准备晚餐。你选做法，我负责把步骤做稳。", "哪件事你已经用行动说了很多次，却还欠一句解释？"),
+        "shenmo": ("你刚才的回答里，哪一部分已经想清楚，哪一部分还没有？", f"先说清一件事：{target_name}，要不要和我一起准备晚餐，再商量分工？", "如果答案还没想好，你通常会先做哪一件小事？"),
+        "linyu": ("你刚才回答以后，现在最希望我记住哪一个细节？", f"{target_name}，要不要一起去厨房准备晚餐？你先挑顺手的，我来补另一边。", "别人照顾你时，什么样的分寸最舒服？"),
+        "chengye": ("你刚才回答了我——那现在最想先做哪一步？", f"{target_name}，别站着聊了，要不要一起去厨房准备晚餐，分工边做边定？", "别人第一次误会你时，你会解释还是直接做给对方看？"),
+        "guyan": ("你刚才的回答里，哪个判断只是暂时的，之后可能会改？", f"如果目标是继续聊，{target_name}，要不要一起准备晚餐？分工可以边做边调整。", "有没有哪次你原本的判断，后来被一个人改掉了？"),
+        "jiangwan": ("你刚才的回答里，哪一句最接近你真正想说的？", f"如果你愿意，我们今晚一起准备晚餐，先从你顺手的部分商量分工。", "什么样的一句追问，会让你觉得自己真的被听见？"),
+        "jiangmi": ("你刚才的回答如果只留一个声音，最想留下哪一句？", f"{target_name}，走，一起去厨房准备晚餐吧；你挑一件想做的，我跟上。", "安静下来以后，你最希望身边的人做什么？"),
+        "sunnian": ("你刚才回答了我；现在有没有一件事，也想让我直接说出自己的选择？", f"{target_name}，今晚一起准备晚餐吧。你告诉我需要哪一部分，我来搭手。", "如果今天不用照顾任何人，你最想把时间留给什么？"),
+        "chensu": ("你刚才回答了我；如果现在就做一步，你会先从哪儿下手？", f"{target_name}，一起准备晚餐吧。你选备菜还是摆桌，剩下的我来。", "有什么事你宁愿先做，也一直不太会开口解释？"),
+        "luyao": ("你刚才的回答里，哪一部分要我听完，哪一部分可以一起找办法？", f"先说我的选择：{target_name}，今晚要不要一起准备晚餐？分工可以一起改。", "有没有哪次临时改变主意，反而让你更确定自己在意什么？"),
+        "yecheng": ("你刚才回答以后，最希望我准确记住哪一个细节？", f"{target_name}，今晚一起准备晚餐好吗？你先说想做哪部分，我负责另一边。", "哪一种被记住的小事，会让你觉得对方真的在听？"),
+        "tangli": ("你刚才回答了我；如果真要一起做，哪一步必须先说清楚？", f"{target_name}，今晚一起准备晚餐吧。先说好，累了就换手，别硬扛。", "如果今天不用照顾整个现场，你最想让谁替你接住哪一步？"),
+        "wenxu": ("你刚才的回答里，哪一部分还只是七成确定？", f"我先不等答案完整了：{target_name}，要不要一起准备晚餐，边做边调整分工？", "有没有一个你明知不够严谨，却还是想诚实说出的答案？"),
+        "hechuan": ("你刚才的回答里，真正不想被我剪掉的是哪一段？", f"这次我先说自己的选择：{target_name}，要不要和我一起准备晚餐？", "如果不能只做倾听的人，你最希望别人先认识你的哪一面？"),
+        "peiran": ("你刚才回答了我。把节目都拿掉，今天哪一小段你还想留下？", f"{target_name}，要不要一起把晚餐准备变成一个小合作？你不想热闹也可以直说。", "游戏停下来以后，你希望身边的人继续问什么？"),
+        "lichuan": ("你刚才回答了我；这次最希望我具体接走哪一部分？", f"{target_name}，今晚一起准备晚餐吧。我们各认一份，也把收尾算进去。", "如果不用照顾整张桌子，你最想把一个座位留给谁？"),
+        "qiaolan": ("你刚才回答了我；接下来要我先说选择，还是先一起做一步？", f"{target_name}，一起准备晚餐。你选做法，我负责把步骤做稳。", "哪件事你已经用行动说了很多次，却还欠一句解释？"),
     }
     followup, voiced_mainline, deeper = voice_copy.get(player_id, (
         "你刚才提到这件事，我想接着问：对你来说最重要的是哪一部分？",
@@ -1510,6 +1510,12 @@ def _normalize_agent_suggestions(
             link_markers = ("刚才", "你说", "你问", "这句话", "你提到", "你刚刚", "你说的")
             if not any(marker in text for marker in link_markers):
                 raise ValueError("followup 建议语没有承接玩家上一句与角色回复")
+            source_copy = re.sub(r"\s+", "", player_text + " " + dialogue)
+            for match in re.finditer(r"你刚才说(?:到|过)?[“「]?([^，。？！；—”」]{3,18})", text):
+                claim = re.sub(r"\s+", "", match.group(1))
+                claim_grams = {claim[index:index + 3] for index in range(max(0, len(claim) - 2))}
+                if claim_grams and not any(gram in source_copy for gram in claim_grams):
+                    raise ValueError("followup 建议语捏造了玩家上一轮没有说过的话")
         if suggestion_type == "mainline":
             node_id = snapshot["nodeId"]
             if node_id == "guided-chat":
@@ -1553,7 +1559,10 @@ def detect_repetitive_agent_reply(snapshot: dict[str, Any], character_id: str, d
         if union and len(current & old) / len(union) >= 0.68:
             return "台词与最近回合高度重复"
     conversation = snapshot.get("agentConversations", {}).get(character_id, {})
-    used_topics = [str(item.get("topic") or item) for item in conversation.get("topicLedger", [])[-6:]]
+    used_topics = [
+        str((item.get("topic") or item) if isinstance(item, dict) else item)
+        for item in conversation.get("topicLedger", [])[-6:]
+    ]
     topic_summary = re.sub(r"\s+", "", str(dialogue or ""))
     stale_openers = ("为什么来这里", "为什么会来", "来这里想", "参加节目的原因", "第一次见这么多人")
     if len(recent) >= 2 and any(term in topic_summary for term in stale_openers):
@@ -1594,6 +1603,21 @@ def validate_agent_turn(
         repeat_reason = detect_repetitive_agent_reply(snapshot, character_id, dialogue)
         if repeat_reason:
             raise ValueError(repeat_reason)
+        if re.search(r"为什么.{0,8}(?:留|来|参加)|为何.{0,8}(?:留|来|参加)", player_text):
+            relational_markers = (
+                "认识", "相处", "关系", "心动", "喜欢", "在意", "真心", "说清楚",
+                "被看见", "被理解", "被当作", "照顾", "互相", "选择一个人", "你和我", "我们",
+                "有人愿意", "跟我一起", "和我一起", "一起把", "一起做", "让人明白",
+                "找个人", "不急着走", "愿意留下",
+            )
+            if not any(marker in dialogue for marker in relational_markers):
+                raise ValueError("被问为何留下时只回答了职业、物件或任务，没有给出与人和关系有关的真实理由")
+        impossible_time_pairs = (
+            r"(?:今晚|夜里|晚点).{0,4}(?:早餐|早饭)",
+            r"(?:清晨|早上|上午).{0,4}(?:晚餐|晚饭|夜宵)",
+        )
+        if any(re.search(pattern, dialogue) for pattern in impossible_time_pairs):
+            raise ValueError("DeepSeek 角色台词出现了明显时间矛盾")
         first_conversation = not any(item.get("characterId") == character_id for item in snapshot.get("echoMemories", []))
         if card.get("identity", {}).get("gender") == "男性" and not first_conversation:
             if dialogue.count("？") + dialogue.count("?") > 1:
@@ -1664,7 +1688,7 @@ def validate_agent_turn(
     topic_summary = str(payload.get("topicSummary") or memory.get("summary") or "本轮具体交流").strip()[:40]
     if snapshot:
         previous_topics = [
-            str(item.get("topic") or item).strip()
+            str((item.get("topic") or item) if isinstance(item, dict) else item).strip()
             for item in snapshot.get("agentConversations", {}).get(card["id"], {}).get("topicLedger", [])[-6:]
         ]
         if topic_summary and topic_summary in previous_topics:

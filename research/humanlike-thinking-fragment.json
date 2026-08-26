@@ -1,0 +1,221 @@
+{
+  "schemaVersion": 1,
+  "contentVersion": "3.2.0-humanlike-fewshots",
+  "generatedAt": "2026-08-26",
+  "scope": ["INTJ", "INTP", "ESTP", "ISTP"],
+  "rosterNote": "用户举例提到 ENTP，但当前运行时阵容对应类型为 ESTP；本轮保持既有 INTJ/INTP/ESTP/ISTP，不静默改型。",
+  "sourceReviews": [
+    {
+      "sourceId": "source.mbti-foundation-types",
+      "url": "https://www.myersbriggs.org/my-mbti-personality-type/the-16-mbti-personality-types/home.htm",
+      "locator": "Type descriptions: INTJ, INTP, ESTP, ISTP",
+      "accessedAt": "2026-08-26",
+      "rightsStatus": "research-only",
+      "targetJurisdictionReview": "Do not redistribute or quote official descriptions in runtime.",
+      "transferRule": "Abstract observable attention, decision and repair tendencies only; never diagnose or override authored character facts.",
+      "prohibitedTransfer": ["verbatim official wording", "type-as-destiny claims", "diagnosis", "gender stereotypes"]
+    },
+    {
+      "sourceId": "source.mbti-type-dynamics",
+      "url": "https://www.myersbriggs.org/unique-features-of-myers-briggs/type-dynamics-processes/",
+      "locator": "Type-dynamics rows and process descriptions: Ni/Te, Ti/Ne, Se/Ti, Ti/Se",
+      "accessedAt": "2026-08-26",
+      "rightsStatus": "research-only",
+      "targetJurisdictionReview": "Do not redistribute or quote official descriptions in runtime.",
+      "transferRule": "Use as a non-diagnostic lens for what a character notices and how a strength can distort under pressure; runtime receives only project-authored rules.",
+      "prohibitedTransfer": ["verbatim descriptions", "clinical inference", "private chain-of-thought", "function-stack determinism"]
+    },
+    {
+      "sourceId": "source.monte-cristo",
+      "url": "https://www.gutenberg.org/ebooks/1184",
+      "locator": "Volume Five, Chapter 117, The Fifth of October, closing letter; Project Gutenberg eBook #1184",
+      "accessedAt": "2026-08-26",
+      "rightsStatus": "public-domain-checked",
+      "targetJurisdictionReview": "Underlying author died 1870; use is limited to abstract authoring. Do not bundle Gutenberg files or translations without separate distribution review.",
+      "transferRule": "Only long-horizon planning, fact checks and willingness to revise; runtime language must be original.",
+      "prohibitedTransfer": ["source dialogue", "revenge identity", "relationship control", "Dumas-style narration"]
+    },
+    {
+      "sourceId": "source.study-in-scarlet",
+      "url": "https://www.gutenberg.org/ebooks/244",
+      "locator": "Part I, Chapter II, The Science of Deduction; Project Gutenberg eBook #244",
+      "accessedAt": "2026-08-26",
+      "rightsStatus": "public-domain-checked",
+      "targetJurisdictionReview": "Underlying author died 1930; use is limited to abstract authoring. Do not bundle Gutenberg files or translations without separate distribution review.",
+      "transferRule": "Only observation -> tentative hypothesis -> correction; runtime language and scenes must be original.",
+      "prohibitedTransfer": ["source dialogue", "detective identity", "case details", "superiority performance"]
+    },
+    {
+      "sourceId": "source.three-musketeers",
+      "url": "https://www.gutenberg.org/ebooks/1257",
+      "locator": "Chapter XLVII, The Council of the Musketeers; Project Gutenberg eBook #1257",
+      "accessedAt": "2026-08-26",
+      "rightsStatus": "public-domain-checked",
+      "targetJurisdictionReview": "Underlying author died 1870; use is limited to abstract authoring. Do not bundle Gutenberg files or translations without separate distribution review.",
+      "transferRule": "Only talk-while-acting, resource inventory and voluntary role allocation; modern consent and opt-out are mandatory.",
+      "prohibitedTransfer": ["source dialogue", "violence", "oaths", "characters", "bravado imitation"]
+    },
+    {
+      "sourceId": "source.mysterious-island",
+      "url": "https://www.gutenberg.org/ebooks/1268",
+      "locator": "Part I, mountain survey and mapping sequence; Project Gutenberg eBook #1268",
+      "accessedAt": "2026-08-26",
+      "rightsStatus": "public-domain-checked",
+      "targetJurisdictionReview": "Underlying author died 1905; use is limited to abstract authoring. Do not bundle Gutenberg files or translations without separate distribution review.",
+      "transferRule": "Only resource inventory, workable repair, safety labeling and reproducible steps; runtime scenes and words must be new.",
+      "prohibitedTransfer": ["source dialogue", "colonial framing", "characters", "island plot", "Verne-style narration"]
+    }
+  ],
+  "newSources": [
+    {
+      "id": "source.project-gutenberg-license",
+      "label": "Project Gutenberg License and public-domain policy",
+      "url": "https://www.gutenberg.org/policy/license",
+      "locator": "Section 1.A and jurisdiction notice",
+      "publisher": "Project Gutenberg Literary Archive Foundation",
+      "accessedAt": "2026-08-26",
+      "evidenceLevel": "verified-policy",
+      "rightsStatus": "research-only",
+      "rightsUse": "rights-review-reference",
+      "targetJurisdictionReview": "Project Gutenberg checks United States status and instructs users outside the United States to check local law.",
+      "transferRule": "Use only to define the rights-review boundary; it does not itself clear bundled files, translations, trademarks or every target jurisdiction.",
+      "prohibitedTransfer": ["Gutenberg trademark use", "bundled source text without license review", "claim of worldwide clearance"]
+    },
+    {
+      "id": "source.twenty-thousand-leagues",
+      "usedByCardIds": ["luyao"],
+      "label": "Jules Verne, Twenty Thousand Leagues under the Seas",
+      "url": "https://www.gutenberg.org/ebooks/164",
+      "locator": "Part I, Chapter XI, All by Electricity; Project Gutenberg eBook #164",
+      "publisher": "Project Gutenberg",
+      "accessedAt": "2026-08-26",
+      "evidenceLevel": "verified-primary-text",
+      "rightsStatus": "public-domain-checked",
+      "rightsUse": "public-domain-reference",
+      "targetJurisdictionReview": "Underlying author died 1905; abstract authoring only. Do not bundle Gutenberg files or translations without separate review.",
+      "transferRule": "Only visible system status, constraints and shared judgment; write original modern dialogue.",
+      "prohibitedTransfer": ["source dialogue", "captivity", "submarine setting", "character identities", "Verne-style narration"]
+    },
+    {
+      "id": "source.time-machine",
+      "usedByCardIds": ["wenxu"],
+      "label": "H. G. Wells, The Time Machine",
+      "url": "https://www.gutenberg.org/ebooks/35",
+      "locator": "Chapter I, model and experimental demonstration; Project Gutenberg eBook #35",
+      "publisher": "Project Gutenberg",
+      "accessedAt": "2026-08-26",
+      "evidenceLevel": "verified-primary-text",
+      "rightsStatus": "public-domain-checked",
+      "rightsUse": "public-domain-reference",
+      "targetJurisdictionReview": "Underlying author died 1946 and is outside the PRC life-plus-50 term; abstract authoring only. Do not bundle Gutenberg files or translations without separate review.",
+      "transferRule": "Only hypothesis -> demonstration -> revision; replace premise, characters, scene and wording.",
+      "prohibitedTransfer": ["source dialogue", "time-machine premise", "character identities", "Wells-style narration"]
+    },
+    {
+      "id": "source.around-world-eighty-days",
+      "usedByCardIds": ["tangli"],
+      "label": "Jules Verne, Around the World in Eighty Days",
+      "url": "https://www.gutenberg.org/ebooks/103",
+      "locator": "Chapters XII-XIII, risk assessment and ally sequence; Project Gutenberg eBook #103",
+      "publisher": "Project Gutenberg",
+      "accessedAt": "2026-08-26",
+      "evidenceLevel": "verified-primary-text",
+      "rightsStatus": "public-domain-checked",
+      "rightsUse": "public-domain-reference",
+      "targetJurisdictionReview": "Underlying author died 1905; abstract authoring only. Do not bundle Gutenberg files or translations without separate review.",
+      "transferRule": "Only risk check, schedule margin, ally coordination and explicit exit rights; all runtime expression must be original and modern.",
+      "prohibitedTransfer": ["source dialogue", "colonial setting", "cultural othering", "rescue fantasy", "character identities"]
+    }
+  ],
+  "evidenceNotes": [
+    {
+      "id": "evidence.mbti.intj-pattern", "sourceId": "source.mbti-foundation-types", "locator": "INTJ description and INTJ Ni/Te dynamics row",
+      "claim": "INTJ preference lens may foreground patterns, long-range implications and organized follow-through; a runtime character must still expose conclusions to correction.",
+      "evidenceClass": "observable-decision-pattern", "confidence": "high", "rightsStatus": "research-only",
+      "transferRule": "Convert to project-authored cue -> long-range interpretation -> explicit check -> bounded action.",
+      "prohibitedTransfer": ["verbatim official wording", "diagnosis", "strategist stereotype"], "verifiedAt": "2026-08-26"
+    },
+    {
+      "id": "evidence.mbti.intp-pattern", "sourceId": "source.mbti-foundation-types", "locator": "INTP description and INTP Ti/Ne dynamics row",
+      "claim": "INTP preference lens may distinguish facts, definitions and hypotheses while pursuing depth; runtime responses must also answer the relationship, not only explain a mechanism.",
+      "evidenceClass": "observable-decision-pattern", "confidence": "high", "rightsStatus": "research-only",
+      "transferRule": "Convert to observation -> tentative explanation -> direct personal answer -> invitation to correct.",
+      "prohibitedTransfer": ["verbatim official wording", "diagnosis", "emotionless genius stereotype"], "verifiedAt": "2026-08-26"
+    },
+    {
+      "id": "evidence.mbti.estp-pattern", "sourceId": "source.mbti-foundation-types", "locator": "ESTP description and ESTP Se/Ti dynamics row",
+      "claim": "ESTP preference lens may focus on present facts, pragmatic options and learning through action; healthy action must keep consent, pace and opt-out visible.",
+      "evidenceClass": "observable-decision-pattern", "confidence": "high", "rightsStatus": "research-only",
+      "transferRule": "Convert present-moment data into one reversible action with explicit consent and a stop condition.",
+      "prohibitedTransfer": ["verbatim official wording", "diagnosis", "reckless thrill-seeker stereotype"], "verifiedAt": "2026-08-26"
+    },
+    {
+      "id": "evidence.mbti.istp-pattern", "sourceId": "source.mbti-foundation-types", "locator": "ISTP description and ISTP Ti/Se dynamics row",
+      "claim": "ISTP preference lens may isolate the core practical issue and act efficiently; runtime care must add the minimum explanation needed so action does not replace communication.",
+      "evidenceClass": "observable-decision-pattern", "confidence": "high", "rightsStatus": "research-only",
+      "transferRule": "Convert to locate -> stop harm -> offer a workable step -> state one necessary reason or feeling.",
+      "prohibitedTransfer": ["verbatim official wording", "diagnosis", "silent mechanic stereotype"], "verifiedAt": "2026-08-26"
+    },
+    {
+      "id": "evidence.shenmo.long-horizon", "sourceId": "source.monte-cristo", "locator": "Volume Five, Chapter 117",
+      "claim": "A long-horizon plan is paired with concrete arrangements and a final willingness to leave the future open rather than control every outcome.",
+      "evidenceClass": "observable-planning-pattern", "confidence": "medium", "rightsStatus": "public-domain-checked",
+      "transferRule": "Transfer long-range sequencing and revision only; remove revenge, identity, plot and wording.",
+      "prohibitedTransfer": ["source sentences", "revenge plot", "Count identity"], "verifiedAt": "2026-08-26"
+    },
+    {
+      "id": "evidence.luyao.system-constraints", "sourceId": "source.twenty-thousand-leagues", "locator": "Part I, Chapter XI",
+      "claim": "Complex capability is made legible through visible instruments, operating limits and concrete effects that another person can inspect.",
+      "evidenceClass": "observable-planning-pattern", "confidence": "medium", "rightsStatus": "public-domain-checked",
+      "transferRule": "Transfer transparent constraints and shared verification; replace setting, characters and wording.",
+      "prohibitedTransfer": ["source sentences", "submarine", "Nemo identity"], "verifiedAt": "2026-08-26"
+    },
+    {
+      "id": "evidence.guyan.observation-hypothesis", "sourceId": "source.study-in-scarlet", "locator": "Part I, Chapter II",
+      "claim": "Concrete traces support a tentative inference, while specialized knowledge marks what remains unproven.",
+      "evidenceClass": "observable-reasoning-pattern", "confidence": "high", "rightsStatus": "public-domain-checked",
+      "transferRule": "Transfer observation/hypothesis separation and correction; remove case, identity and wording.",
+      "prohibitedTransfer": ["source sentences", "detective persona", "case details"], "verifiedAt": "2026-08-26"
+    },
+    {
+      "id": "evidence.wenxu.hypothesis-demonstration", "sourceId": "source.time-machine", "locator": "Chapter I",
+      "claim": "A contested idea is separated into stated grounds and a small observable demonstration, allowing the explanation to be revised by evidence.",
+      "evidenceClass": "observable-reasoning-pattern", "confidence": "medium", "rightsStatus": "public-domain-checked",
+      "transferRule": "Transfer hypothesis/demonstration/revision only; replace premise, characters and wording.",
+      "prohibitedTransfer": ["source sentences", "time travel premise", "Time Traveller identity"], "verifiedAt": "2026-08-26"
+    },
+    {
+      "id": "evidence.chengye.act-while-talking", "sourceId": "source.three-musketeers", "locator": "Chapter XLVII",
+      "claim": "Conversation proceeds alongside visible resource checks and role allocation, converting uncertainty into shared action.",
+      "evidenceClass": "observable-cooperation-pattern", "confidence": "medium", "rightsStatus": "public-domain-checked",
+      "transferRule": "Transfer talk-while-doing and role clarity; require modern consent and remove violence, identities and wording.",
+      "prohibitedTransfer": ["source sentences", "violence", "oaths", "Musketeer identities"], "verifiedAt": "2026-08-26"
+    },
+    {
+      "id": "evidence.tangli.risk-with-consent", "sourceId": "source.around-world-eighty-days", "locator": "Chapters XII-XIII",
+      "claim": "Before a risky action, participants examine the constraint, available time and help rather than treating speed as the only goal.",
+      "evidenceClass": "observable-safety-pattern", "confidence": "medium", "rightsStatus": "public-domain-checked",
+      "transferRule": "Transfer risk check, schedule margin and ally coordination; add explicit modern consent and exit rights.",
+      "prohibitedTransfer": ["source sentences", "colonial framing", "rescue fantasy", "character identities"], "verifiedAt": "2026-08-26"
+    },
+    {
+      "id": "evidence.chensu.workable-repair", "sourceId": "source.mysterious-island", "locator": "Part I, mountain survey and mapping sequence",
+      "claim": "A practical group names resources and unknowns, then turns them into workable, inspectable next steps.",
+      "evidenceClass": "observable-repair-pattern", "confidence": "medium", "rightsStatus": "public-domain-checked",
+      "transferRule": "Transfer resource inventory and inspectable action; add necessary relationship explanation and replace all source context.",
+      "prohibitedTransfer": ["source sentences", "colonial framing", "island plot", "character identities"], "verifiedAt": "2026-08-26"
+    },
+    {
+      "id": "evidence.qiaolan.safety-labeling", "sourceId": "source.mysterious-island", "locator": "Part I, mountain survey and mapping sequence",
+      "claim": "A shared space becomes actionable when known routes, unknown zones and risk points are labeled so another person can reproduce the judgment.",
+      "evidenceClass": "observable-safety-pattern", "confidence": "medium", "rightsStatus": "public-domain-checked",
+      "transferRule": "Transfer explicit labels, reproducible steps and stop conditions; replace setting, characters and wording.",
+      "prohibitedTransfer": ["source sentences", "colonial framing", "island plot", "character identities"], "verifiedAt": "2026-08-26"
+    }
+  ],
+  "rightsReview": {
+    "targetJurisdictions": ["PRC mainland", "United States"],
+    "runtimeRule": "Runtime receives only original project fewShots and behavior rules, never source passages, character identities or author-style imitation instructions.",
+    "reviewBoundary": "Authoring-level rights check only; not a substitute for counsel on distribution, translations, trademarks or bundled Gutenberg files."
+  }
+}

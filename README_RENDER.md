@@ -2,6 +2,8 @@
 
 这个仓库包含完整 React/FastAPI 版本、16 张人物卡（8 种 MBTI，每型一男一女）、单局 8 人/4 男 4 女阵容、16 位动态肖像、四套性别匹配剧情事件视频、事件驱动剧情状态机，以及服务端 DeepSeek 角色 Agent。
 
+本文件只描述独立的“人味增强版”部署。原版 `Dancejie/xindong-journey-echo`、`xindong-journey-echo.onrender.com` 及其数据库保持不变；可审计边界见 `INSTANCE_PROVENANCE.md`。
+
 ## 架构
 
 - 前端：`frontend/dist/`，由 FastAPI 同源托管，运行时视频位于 `frontend/dist/media/video/`；Render 构建会显式检查该目录已经随发布提交存在。
@@ -13,8 +15,8 @@
 
 仓库根目录的 `render.yaml` 会创建：
 
-1. Python Web Service：`xindong-journey-echo`
-2. Render PostgreSQL：`xindong-journey-db`
+1. Python Web Service：`xindong-journey-humanlike`
+2. Render PostgreSQL：`xindong-journey-humanlike-db`
 
 在 Render Dashboard 新建 Blueprint，选择本仓库。首次同步时填写：
 

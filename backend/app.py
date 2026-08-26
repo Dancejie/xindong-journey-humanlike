@@ -24,13 +24,13 @@ from backend.agent_prompt import (
 )
 from backend.day1_script import (
     build_day1_node_messages,
-    build_day1_script_messages,
     install_cached_day1_script,
     install_day1_node_script,
     install_day1_script,
     validate_day1_node_script,
 )
 from backend.game_content import (
+    CARD_PACKAGE,
     CHARACTER_CARD_MAP,
     CHARACTER_MAP,
     CHARACTERS,
@@ -214,23 +214,17 @@ async def _generate_day1_node_script(snapshot: dict, node_id: str) -> dict | Non
 
 
 async def _generate_day1_script(snapshot: dict) -> dict:
-    """Prefer the validated cache; generation is a bounded recovery path only."""
+    """Install opening copy without putting a full LLM round on the start path.
+
+    Existing reviewed DeepSeek cache remains the preferred flavor.  A newly
+    added protagonist may not have a cached package yet; in that case the
+    deterministic character-card fallback is good enough to open the door
+    immediately.  Later committed nodes can still request their scoped
+    DeepSeek rewrite through ``_generate_day1_node_script``.
+    """
     cached = install_cached_day1_script(snapshot)
     if cached is not None:
         return cached
-    if not os.getenv("DEEPSEEK_API_KEY", "").strip():
-        return install_day1_script(snapshot, None)
-    messages = build_day1_script_messages(snapshot)
-    for attempt in range(2):
-        try:
-            raw = await _llm_text(messages, max_tokens=6000)
-            installed = install_day1_script(snapshot, extract_json(raw))
-            if installed["scriptFlavor"]["source"] == "deepseek":
-                return installed
-            raise ValueError("台本输出没有通过确定性合同")
-        except Exception as error:
-            if attempt == 0:
-                messages = [*messages, {"role": "user", "content": f"上一稿未通过台本合同：{error}。请按确定性骨架重新输出全部节点 JSON，不要解释。"}]
     return install_day1_script(snapshot, None)
 
 
@@ -289,8 +283,9 @@ def _enforce_agent_rate_limit(user_id: str) -> None:
 def health() -> dict:
     return {
         "ok": True,
-        "service": "xindong-journey-echo",
+        "service": "xindong-journey-humanlike",
         "contentVersion": CONTENT_VERSION,
+        "characterCardContentVersion": CARD_PACKAGE["contentVersion"],
         "authMode": os.getenv("APP_AUTH_MODE", "sso"),
         "agentProvider": "deepseek" if os.getenv("DEEPSEEK_API_KEY") else "unconfigured",
         "databaseConfigured": bool(os.getenv("DATABASE_URL") or _load_props("db.properties").get("db.host")),

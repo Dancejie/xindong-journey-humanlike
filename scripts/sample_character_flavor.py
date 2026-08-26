@@ -7,6 +7,7 @@ import asyncio
 import json
 import os
 import sys
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -19,8 +20,7 @@ sys.path.insert(0, str(ROOT))
 from backend.agent_prompt import build_agent_messages, extract_json  # noqa: E402
 from backend.game_content import (  # noqa: E402
     CHARACTER_CARDS,
-    apply_choice,
-    commit_agent_turn,
+    active_cast_ids,
     create_snapshot,
     validate_agent_turn,
 )
@@ -44,21 +44,44 @@ def load_env(path: Path) -> dict[str, str]:
 
 async def request_turn(client: httpx.AsyncClient, semaphore: asyncio.Semaphore, card: dict, snapshot: dict, player_input: str, api_key: str, base_url: str, model: str) -> dict:
     async with semaphore:
-        response = await client.post(
-            f"{base_url.rstrip('/')}/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json={"model": model, "messages": build_agent_messages(card, snapshot, player_input), "max_tokens": 760, "stream": False, "thinking": {"type": "disabled"}},
-        )
-        response.raise_for_status()
-        choices = response.json().get("choices") or []
-        raw = str(choices[0].get("message", {}).get("content") or "").strip() if choices else ""
-        validated = validate_agent_turn(card, extract_json(raw))
-        _, receipt = commit_agent_turn(snapshot, card["id"], player_input, validated)
-        committed_delta = {axis: int(receipt["patch"].get(f"relationships.{card['id']}.{axis}", 0)) for axis in card["agentPolicy"]["deltaBounds"]}
+        messages = build_agent_messages(card, snapshot, player_input)
+        validated = None
+        for attempt in range(2):
+            response = await client.post(
+                f"{base_url.rstrip('/')}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={"model": model, "messages": messages, "max_tokens": 760, "stream": False, "thinking": {"type": "disabled"}},
+            )
+            response.raise_for_status()
+            choices = response.json().get("choices") or []
+            raw = str(choices[0].get("message", {}).get("content") or "").strip() if choices else ""
+            payload = extract_json(raw)
+            try:
+                validated = validate_agent_turn(card, payload, snapshot, player_input)
+                break
+            except Exception as error:
+                if attempt == 1:
+                    if any(term in str(error) for term in ("建议语", "followup", "mainline")):
+                        payload.pop("suggestions", None)
+                        validated = validate_agent_turn(card, payload, snapshot, player_input)
+                        break
+                    raise RuntimeError(
+                        f"{card['names']['primary']} 连续两次未通过：{error}；"
+                        f"末次台词={str(payload.get('dialogue') or '')[:260]}"
+                    ) from error
+                messages = [
+                    *messages,
+                    {"role": "user", "content": f"上一轮未通过人物与时间线合同：{error}。保持同一人物判断，重写完整 JSON；只使用当前已发生事实。"},
+                ]
+        assert validated is not None
         return {
             "characterId": card["id"], "name": card["names"]["primary"], "mbti": card["mbti"],
-            **validated, "relationshipDelta": committed_delta,
-            "activatedEventId": (receipt.get("eventActivation") or {}).get("eventId"),
+            **validated,
+            "relationshipDelta": {
+                axis: int(validated["relationshipDelta"].get(axis, 0))
+                for axis in card["agentPolicy"]["deltaBounds"]
+            },
+            "activatedEventId": None,
         }
 
 
@@ -71,7 +94,7 @@ def markdown_report(results: list[dict], player_input: str, model: str) -> str:
         f"- 模型：`{model}`",
         "- 人物卡：`content/character_cards.v3.json`",
         f"- 同一玩家输入：{player_input}",
-        "- 边界：本报告只验证角色表演、态度、记忆与受约束参数建议；未写入线上数据库。",
+        "- 边界：本报告只验证角色表演、态度、记忆与受约束参数建议；不提交状态，也未写入线上数据库。",
         "",
         "## 横向速览",
         "",
@@ -116,13 +139,69 @@ async def run(args: argparse.Namespace) -> int:
         raise SystemExit("DEEPSEEK_API_KEY 未配置")
     base_url = env.get("DEEPSEEK_API_BASE", "https://api.deepseek.com")
     model = env.get("DEEPSEEK_MODEL", "deepseek-v4-flash")
-    snapshot = create_snapshot(args.player_mbti)
-    snapshot, _ = apply_choice(snapshot, "arrive-ask-rule")
-    snapshot, _ = apply_choice(snapshot, "first-person")
+    snapshot = create_snapshot(args.player_mbti, args.player_character or None)
     cards = [card for card in CHARACTER_CARDS if not args.character or card["id"] in args.character]
+    active_ids = set(active_cast_ids(snapshot))
+    player_id = snapshot["player"]["perspectiveCharacterId"]
+    invalid = [card["id"] for card in cards if card["id"] == player_id or card["id"] not in active_ids]
+    if invalid:
+        raise SystemExit(
+            "抽样角色必须在当前八人阵容且不能是玩家本人：" + ", ".join(invalid)
+            + f"；当前玩家={player_id}，阵容={','.join(active_cast_ids(snapshot))}"
+        )
+    scene_snapshots: list[dict] = []
+    for card in cards:
+        scene_snapshot = deepcopy(snapshot)
+        if args.scene_node:
+            scene_snapshot["nodeId"] = args.scene_node
+        scene_snapshot["sceneContext"] = {
+            "version": 1,
+            "time": "DAY 1 · 18:42",
+            "locationId": "villa-living-room",
+            "locationName": "别墅客厅",
+            "channel": "1v1",
+            "participantIds": [player_id, card["id"]],
+            "participantNames": [
+                next(item["names"]["primary"] for item in CHARACTER_CARDS if item["id"] == player_id),
+                card["names"]["primary"],
+            ],
+        }
+        if args.conversation_mode == "reopening":
+            scene_snapshot["echoMemories"].append({
+                "id": f"local-flavor-memory-{card['id']}",
+                "characterId": card["id"],
+                "kind": "episodic",
+                "summary": f"集体自我介绍结束后，玩家记住了{card['names']['primary']}公开说过的来意",
+                "interpretation": "玩家在听具体内容，但双方还没有形成亲密承诺",
+                "rawQuote": "先从一件眼前的小事认识彼此",
+                "agentReply": "先不把答案说满，我们从眼前这件事聊。",
+                "attitude": "curious",
+                "time": "DAY 1 · 18:30",
+                "locationName": "别墅客厅",
+                "channel": "group",
+                "participantNames": ["八位嘉宾"],
+            })
+            scene_snapshot["agentConversations"][card["id"]] = {
+                "turnCount": 1,
+                "topicLedger": [{
+                    "topic": "集体自我介绍与参加来意",
+                    "time": "DAY 1 · 18:30",
+                    "locationName": "别墅客厅",
+                }],
+            }
+        if scene_snapshot["nodeId"] == "guided-chat":
+            scene_snapshot["pendingInteraction"] = {
+                "type": "guided-first-chat", "targetCharacterId": card["id"],
+                "status": "required", "requiredTurnCount": 1, "completedTurnCount": 0,
+                "sourceChoiceId": "local-flavor-qa", "reason": "本地人物风味验收",
+            }
+        scene_snapshots.append(scene_snapshot)
     semaphore = asyncio.Semaphore(max(1, min(args.concurrency, 2)))
     async with httpx.AsyncClient(timeout=90) as client:
-        jobs = [request_turn(client, semaphore, card, snapshot, args.player_input, api_key, base_url, model) for card in cards]
+        jobs = [
+            request_turn(client, semaphore, card, scene_snapshot, args.player_input, api_key, base_url, model)
+            for card, scene_snapshot in zip(cards, scene_snapshots)
+        ]
         results = await asyncio.gather(*jobs)
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -139,6 +218,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", default=str(ROOT / "qa" / "DEEPSEEK-CHARACTER-FLAVOR.md"))
     parser.add_argument("--player-input", default=DEFAULT_INPUT)
     parser.add_argument("--player-mbti", default="INFP")
+    parser.add_argument("--player-character")
+    parser.add_argument("--scene-node", default="guided-chat")
+    parser.add_argument("--conversation-mode", choices=("first-meeting", "reopening"), default="reopening")
     parser.add_argument("--character", action="append")
     parser.add_argument("--concurrency", type=int, default=2)
     return parser.parse_args()

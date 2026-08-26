@@ -13,6 +13,8 @@
 - `content/day1_script_flavors.v1.json`：原始 8 位角色经合同校验和人物风味复核的 DeepSeek 首日台本缓存；新增角色在缓存扩充前使用确定性人物卡台本，不会为开局偷偷触发付费生成。
 - `scripts/generate-day1-script-cache.py`：使用受保护的本地 DeepSeek 配置并发生成/复核台本缓存，不把密钥写入内容或前端。
 - `content/research_sources.v3.json`：原始 DOCX、MBTI 与公共领域文学行为参考的来源、证据层级和版权用途。
+- `research/HUMANLIKE-FEWSHOT-RESEARCH.md` 与 `research/HUMANLIKE-FEELING-RESEARCH.md`：8 种 MBTI、16 位独立角色的检索记录、来源定位、权利边界与原创微场景；文学只迁移可观察的决策顺序，不复制台词、人物或作者文风。
+- `docs/EXPRESSION-AND-ROMANCE-CONTRACT.md`：把“活人日常感”和女本位关系节拍固化为 DeepSeek 的人话、恋商、连续性与一票重写合同。
 - `backend/game_content.py` 与 `backend/day1_script.py`：确定性剧情节点、DeepSeek 表层台本合同、非 self/目标白名单校验、事件门槛与 StatePatch。
 - `content/story_event_catalog.v1.json`：16 个带前置条件、玩家任务、失败出口、回调与媒体提示的恋综事件模板，包含“水上踏板”同意边界与反差成长事件。
 - `content/story_event_sources.v1.json`：恋综机制研究证据与设计用途，不复制具体节目剧情。
@@ -39,7 +41,7 @@
 
 ## GitHub / Render 公网版本
 
-React/FastAPI 公网版本由 GitHub `main` 自动部署到 [xindong-journey-echo.onrender.com](https://xindong-journey-echo.onrender.com/)，保留 MP4、PostgreSQL 角色独立记忆、地点/群聊/短信状态与服务端 Agent 接口，并以匿名访客身份替代 Cowork 内网 SSO。部署方式和密钥边界见 `README_RENDER.md` 与根目录 `render.yaml`。DeepSeek 密钥只配置在服务端环境变量中，前端、人物卡和 GitHub 均不含密钥。
+本仓库是与原版并行维护的“人味增强版”，不会覆盖 [`Dancejie/xindong-journey-echo`](https://github.com/Dancejie/xindong-journey-echo) 或原 Render 服务。它由独立仓库 [`Dancejie/xindong-journey-humanlike`](https://github.com/Dancejie/xindong-journey-humanlike) 的 `main` 部署到 `xindong-journey-humanlike.onrender.com`，保留 MP4、PostgreSQL 角色独立记忆、地点/群聊/短信状态与服务端 Agent 接口，并以匿名访客身份替代 Cowork 内网 SSO。部署方式、两个版本的边界和密钥规则见 `README_RENDER.md`、`INSTANCE_PROVENANCE.md` 与根目录 `render.yaml`。DeepSeek 密钥只配置在新服务的服务端环境变量中，前端、人物卡和 GitHub 均不含密钥。
 
 R5 媒体规则要求运行时人物与审核过的 `identityCast` 精确匹配；缺少某位主角或搭档的事件母片时，只显示该角色的动态立绘，不使用姜米或其他人物的错误镜头。完整语义媒体矩阵与付费生成门禁位于 `media/production/cast-perspective-r5/`。
 

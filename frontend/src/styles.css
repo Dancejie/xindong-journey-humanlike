@@ -109,6 +109,7 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid rgba(255, 211,
 .role-picker button small { overflow: hidden; color: rgba(255,255,255,.62); font-size: 8px; line-height: 1.35; white-space: nowrap; text-overflow: ellipsis; }
 .role-picker button > i { color: #ffd0dc; font-style: normal; }
 .role-picker button.active { border-color: rgba(255,255,255,.75); background: color-mix(in srgb, var(--accent) 40%, rgba(38,25,39,.78)); transform: translateY(-2px); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 42%, transparent), 0 10px 28px rgba(20,12,23,.34); }
+.role-picker button:disabled, .selection-back:disabled { cursor: wait; opacity: .72; }
 .character-preview { position: relative; z-index: 2; margin-top: 12px; min-height: 0; padding: 17px 18px 14px; border-radius: 24px; }
 .character-preview__heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .character-preview__heading span { padding: 5px 10px; border-radius: 999px; color: white; background: var(--accent); font: 600 10px Georgia, serif; }
@@ -120,6 +121,9 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid rgba(255, 211,
 .character-preview dt { color: #ffcbd7; font-size: 8px; }
 .character-preview dd { margin: 4px 0 0; color: rgba(255,255,255,.72); font-size: 8px; line-height: 1.5; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .character-preview .start-button { min-height: 48px; }
+.role-start-feedback { margin: 7px 3px 0 !important; color: rgba(255,255,255,.66) !important; font: 8px/1.5 system-ui, sans-serif !important; text-align: center; }
+.role-start-feedback--error { padding: 7px 9px; border: 1px solid rgba(255,186,202,.28); border-radius: 10px; color: #ffd9e2 !important; background: rgba(101,32,52,.38); text-align: left; }
+.scene-media--startup-poster .scene-media__poster { opacity: .9; }
 .static-media-note { margin-top: 10px !important; padding: 8px 10px; border: 1px solid rgba(255,255,255,.12); border-radius: 11px; color: rgba(255,255,255,.62) !important; background: rgba(20,14,23,.2); font-size: 8px !important; }
 .role-empty { margin-top: 12px; padding: 18px; border-radius: 22px; text-align: center; }
 .role-empty span { font: 500 14px/1.4 "Noto Serif SC", serif; }

@@ -36,6 +36,8 @@ from backend.agent_prompt import (
     build_chat_opening_messages,
     extract_json,
     fallback_chat_opening,
+    runtime_character_card,
+    select_runtime_few_shots,
     validate_chat_opening,
 )
 from backend.day1_script import (
@@ -105,6 +107,92 @@ class CharacterCardContractTests(unittest.TestCase):
                 ]
                 self.assertEqual(1, len(counterpart_ids))
                 self.assertNotEqual(CHARACTER_MAP[card["id"]]["gender"], CHARACTER_MAP[counterpart_ids[0]]["gender"])
+
+    def test_runtime_few_shot_retrieval_uses_observable_message_and_scene_cues(self):
+        card = json.loads(json.dumps(CHARACTER_CARD_MAP["chensu"], ensure_ascii=False))
+        card["fewShots"] = [
+            {"id": "fs.chensu.opening", "context": "初次见面", "player": "你好", "attitude": "curious", "reply": "先从眼前的小事聊。"},
+            {"id": "fs.chensu.support", "context": "被具体支持", "player": "我可以帮你", "attitude": "warm", "reply": "那一起做，但不用全替我做。"},
+            {"id": "fs.chensu.challenge", "context": "判断受到质疑", "player": "我不信", "attitude": "challenging", "reply": "先试一次，再看结果。"},
+            {"id": "fs.chensu.boundary", "context": "边界被逼迫", "player": "你必须现在答应", "attitude": "boundary", "reply": "别替我决定。"},
+        ]
+        selected = select_runtime_few_shots(
+            card, "我不喜欢被逼，你不要替我决定",
+            {"nodeId": "guided-chat", "conversationMode": "reopening", "currentAttitude": "boundary"},
+        )
+        self.assertEqual("chensu", selected["characterId"])
+        self.assertEqual("fs.chensu.boundary", selected["items"][0]["id"])
+        self.assertIn("boundary", selected["selectionBasis"]["observableCues"])
+        self.assertEqual(3, len(selected["items"]))
+        self.assertTrue(all("chosenTactic" in item and "repairOrExit" in item for item in selected["items"]))
+
+    def test_runtime_character_card_strips_source_lines_and_unselected_examples(self):
+        card = CHARACTER_CARD_MAP["shenmo"]
+        projected = runtime_character_card(card)
+        serialized = json.dumps(projected, ensure_ascii=False)
+        self.assertNotIn("fewShots", projected)
+        self.assertNotIn("sourceRefIds", projected)
+        self.assertNotIn("microExcerpt", serialized)
+        self.assertEqual(
+            {"facts", "adaptationBoundary"},
+            set(projected.get("sourceProfile", {})),
+        )
+        self.assertTrue(all(
+            set(anchor).issubset({"observablePattern", "transferRule"})
+            for anchor in projected.get("researchAnchors", [])
+        ))
+        source_line = card["researchAnchors"][0].get("microExcerpt")
+        if source_line:
+            self.assertNotIn(source_line, serialized)
+        self.assertIn(card["researchAnchors"][0]["observablePattern"], serialized)
+
+    def test_all_runtime_prompts_strip_authoring_provenance_but_keep_behavior_transfer(self):
+        forbidden_field_names = (
+            '"sourceRefIds"', '"sourceRefId"', '"sourceEvidenceIds"',
+            '"sourceName"', '"sourceMbti"', '"alignment"',
+            '"work"', '"locator"', '"microExcerpt"',
+        )
+        for card in CHARACTER_CARDS:
+            with self.subTest(character=card["id"]):
+                target_snapshot = snapshot_with_character(card["id"])
+                player_card = CHARACTER_CARD_MAP[target_snapshot["player"]["perspectiveCharacterId"]]
+                protagonist_snapshot = _create_snapshot(card["mbti"], card["id"])
+                prompt_copies = {
+                    "runtimeCard": json.dumps(runtime_character_card(card), ensure_ascii=False),
+                    "agent": "\n".join(
+                        item["content"] for item in build_agent_messages(
+                            card, target_snapshot, "我愿意听你把这件事说清楚。", player_card,
+                        )
+                    ),
+                    "opening": "\n".join(
+                        item["content"] for item in build_chat_opening_messages(
+                            card, target_snapshot, player_card,
+                        )
+                    ),
+                    "day1": "\n".join(
+                        item["content"] for item in build_day1_node_messages(
+                            protagonist_snapshot, "team-up",
+                        )
+                    ),
+                }
+                source_markers = set(card.get("sourceRefIds") or [])
+                for anchor in card.get("researchAnchors") or []:
+                    source_markers.update(
+                        str(anchor.get(key))
+                        for key in ("sourceRefId", "work", "locator")
+                        if anchor.get(key)
+                    )
+                for shot in card.get("fewShots") or []:
+                    source_markers.update(str(item) for item in shot.get("sourceEvidenceIds") or [])
+                for prompt_kind, serialized in prompt_copies.items():
+                    for field_name in forbidden_field_names:
+                        self.assertNotIn(field_name, serialized, f"{card['id']} {prompt_kind}")
+                    for marker in source_markers:
+                        self.assertNotIn(marker, serialized, f"{card['id']} {prompt_kind}: {marker}")
+                self.assertIn(
+                    card["researchAnchors"][0]["observablePattern"],
+                    prompt_copies["runtimeCard"],
+                )
 
     def test_media_rotation_is_stable_and_never_crosses_player_gender(self):
         for card in CHARACTER_CARDS:
@@ -630,14 +718,14 @@ class CharacterCardContractTests(unittest.TestCase):
         self.assertEqual("test-model", installed["scriptFlavor"]["generator"]["model"])
         self.assertEqual(CARD_PACKAGE["contentVersion"], installed["scriptFlavor"]["characterCardContentVersion"])
 
-    def test_runtime_cache_contains_eight_valid_legacy_deepseek_flavors(self):
+    def test_runtime_rejects_legacy_cache_after_humanlike_card_upgrade(self):
         package = json.loads((Path(__file__).resolve().parent.parent / "content" / "day1_script_flavors.v1.json").read_text(encoding="utf-8"))
         self.assertEqual(set(LEGACY_CAST_IDS), set(package["flavors"]))
         for card in CHARACTER_CARDS[:8]:
             snapshot = create_snapshot(card["mbti"], card["id"])
-            installed = install_cached_day1_script(snapshot)
-            self.assertIsNotNone(installed)
-            self.assertEqual("deepseek-cached", installed["scriptFlavor"]["source"])
+            self.assertIsNone(install_cached_day1_script(snapshot))
+            installed = install_day1_script(snapshot, None)
+            self.assertEqual("fallback", installed["scriptFlavor"]["source"])
             for choice in installed["scriptFlavor"]["nodes"]["introductions"]["choices"]:
                 self.assertIn(card["names"]["primary"], choice["label"])
                 self.assertIn(card["mbti"], choice["label"])
@@ -667,16 +755,11 @@ class CharacterCardContractTests(unittest.TestCase):
                 self.assertTrue(any(marker in label for marker in ("来这里", "来参加", "这次来", "这七天", "我来参加")))
                 self.assertFalse(any(summary in label for summary in strategy_summaries))
 
-    def test_all_installed_cached_nodes_pass_contextual_surface_contract(self):
-        package = json.loads((Path(__file__).resolve().parent.parent / "content" / "day1_script_flavors.v1.json").read_text(encoding="utf-8"))
+    def test_all_runtime_fallback_nodes_pass_contextual_surface_contract(self):
         for card in CHARACTER_CARDS[:8]:
             snapshot = create_snapshot(card["mbti"], card["id"])
-            installed = install_cached_day1_script(snapshot)
-            self.assertIsNotNone(installed)
-            self.assertEqual(
-                {"cast-first-impressions", "icebreaker-choice"},
-                set(installed["scriptFlavor"]["nodeSources"]),
-            )
+            installed = install_day1_script(snapshot, None)
+            self.assertEqual("fallback", installed["scriptFlavor"]["source"])
             for node_id, node in installed["scriptFlavor"]["nodes"].items():
                 snapshot["nodeId"] = node_id
                 validate_day1_node_script(snapshot, node_id, {"node": node})
@@ -761,7 +844,7 @@ class CharacterCardContractTests(unittest.TestCase):
             {"type": "mainline", "text": "要不要一起去厨房看看，今晚我们能准备什么？"},
             {"type": "deeper", "text": "别人第一次见你时，最容易误会你的哪一点？"},
         ]
-        validated = validate_agent_turn(card, turn, snapshot, "刚进客厅还有点生疏。")
+        validated = validate_agent_turn(card, turn, snapshot, "刚进客厅还有点生疏，不过整理房间会让我放松。")
         self.assertEqual("mainline-gradient", validated["suggestions"][1]["style"])
 
     def test_agent_suggestion_cannot_turn_future_interest_into_present_fact(self):
@@ -770,7 +853,7 @@ class CharacterCardContractTests(unittest.TestCase):
         card = CHARACTER_CARD_MAP["chensu"]
         turn = valid_turn(card)
         turn["suggestions"] = [
-            {"type": "followup", "text": "你刚才说修东西会放松，是一直都有的习惯吗？"},
+            {"type": "followup", "text": "你刚才介绍了自己；第一次见这么多人，现在最想先聊什么？"},
             {"type": "mainline", "text": "要不要一起去厨房准备晚餐，我们先商量分工？"},
             {"type": "deeper", "text": "你带的那台旧相机，最想拍下谁？"},
         ]
@@ -791,6 +874,24 @@ class CharacterCardContractTests(unittest.TestCase):
         self.assertEqual("reopening", reopened["mode"])
         self.assertIn("上次", reopened["opening"])
 
+    def test_agent_prompt_retrieves_only_current_character_few_shots(self):
+        snapshot = create_snapshot("ENFP", "jiangmi")
+        shenmo = CHARACTER_CARD_MAP["shenmo"]
+        linyu = CHARACTER_CARD_MAP["linyu"]
+        shenmo_prompt = build_agent_messages(shenmo, snapshot, "我不会催你回答。", CHARACTER_CARD_MAP["jiangmi"])[1]["content"]
+        linyu_prompt = build_agent_messages(linyu, snapshot, "我不会催你回答。", CHARACTER_CARD_MAP["jiangmi"])[1]["content"]
+        self.assertIn('"retrievedFewShotStructures"', shenmo_prompt)
+        self.assertIn('"characterId": "shenmo"', shenmo_prompt)
+        self.assertIn('"retrievedPlayerStrategyFewShotStructures"', shenmo_prompt)
+        self.assertIn('"characterId": "jiangmi"', shenmo_prompt)
+        self.assertIn('"characterId": "linyu"', linyu_prompt)
+        self.assertNotEqual(shenmo_prompt, linyu_prompt)
+        self.assertNotIn('"microExcerpt"', shenmo_prompt)
+        source_line = shenmo["researchAnchors"][0].get("microExcerpt")
+        if source_line:
+            self.assertNotIn(source_line, shenmo_prompt)
+        self.assertNotIn(linyu["fewShots"][0]["reply"], shenmo_prompt)
+
     def test_agent_turn_returns_typed_suggestions_and_legacy_projection(self):
         snapshot = create_snapshot("ENFP", "jiangmi")
         snapshot["nodeId"] = "guided-chat"
@@ -808,6 +909,37 @@ class CharacterCardContractTests(unittest.TestCase):
         prompt = build_agent_messages(card, snapshot, "我也会先想清楚。", CHARACTER_CARD_MAP["jiangmi"])[1]["content"]
         self.assertIn('"playerVoiceForSuggestions"', prompt)
         self.assertIn('"type": "mainline"', prompt)
+
+    def test_suggestion_fallback_is_grounded_and_rejects_fake_player_quote(self):
+        snapshot = snapshot_with_character("jiangmi")
+        snapshot["nodeId"] = "guided-chat"
+        snapshot["echoMemories"].append({
+            "characterId": "jiangmi", "agentReply": "我们先聊眼前这件事。",
+            "summary": "双方已完成第一次问候",
+        })
+        card = CHARACTER_CARD_MAP["jiangmi"]
+        fallback_payload = valid_turn(card)
+        fallback_payload["dialogue"] = "我留下，是想知道安静坐在一个人身边时，我们还愿不愿意继续认识彼此。"
+        fallback_payload["proposedEventId"] = None
+        fallback_payload.pop("suggestions", None)
+        validated = validate_agent_turn(
+            card, fallback_payload, snapshot,
+            "我不想听节目里的标准答案。你为什么还留在这里？",
+        )
+        self.assertNotIn("这个点子很好玩", validated["suggestions"][0]["text"])
+        self.assertIn("刚才回答", validated["suggestions"][0]["text"])
+
+        fake_quote = dict(fallback_payload)
+        fake_quote["suggestions"] = [
+            {"type": "followup", "text": "你刚才说这个点子很好玩，那最想留下哪一步？"},
+            {"type": "mainline", "text": "姜米，要不要一起去厨房准备晚餐？我们先商量分工。"},
+            {"type": "deeper", "text": "安静下来以后，你最希望身边的人做什么？"},
+        ]
+        with self.assertRaisesRegex(ValueError, "捏造"):
+            validate_agent_turn(
+                card, fake_quote, snapshot,
+                "我不想听节目里的标准答案。你为什么还留在这里？",
+            )
 
     def test_agent_mainline_suggestion_must_return_to_current_goal(self):
         snapshot = create_snapshot("ENFP", "jiangmi")
@@ -893,7 +1025,29 @@ class CharacterCardContractTests(unittest.TestCase):
         payload = json.loads(messages[1]["content"])
         self.assertIn("humanSpeechContract", payload["context"])
         self.assertIn("romanticIntelligenceContract", payload["context"])
+        retrieved = payload["context"]["retrievedFewShotStructures"]
+        self.assertEqual("linyu", retrieved["characterId"])
+        self.assertGreaterEqual(len(retrieved["items"]), 2)
+        self.assertLessEqual(len(retrieved["items"]), 3)
+        player_strategy = payload["context"]["retrievedPlayerStrategyFewShotStructures"]
+        self.assertEqual("jiangmi", player_strategy["characterId"])
+        self.assertGreaterEqual(len(player_strategy["items"]), 2)
         self.assertIn("只注意一个现场细节", messages[0]["content"])
+
+    def test_day1_node_prompt_retrieves_protagonist_few_shots_without_source_quote(self):
+        snapshot = _create_snapshot("ISTP", "qiaolan")
+        payload = json.loads(build_day1_node_messages(snapshot, "team-up")[1]["content"])
+        context = payload["context"]
+        retrieved = context["retrievedFewShotStructures"]
+        self.assertEqual("qiaolan", retrieved["characterId"])
+        self.assertGreaterEqual(len(retrieved["items"]), 2)
+        self.assertLessEqual(len(retrieved["items"]), 3)
+        self.assertNotIn("fewShots", context["protagonistCard"])
+        serialized = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn("microExcerpt", serialized)
+        source_line = CHARACTER_CARD_MAP["qiaolan"]["researchAnchors"][0].get("microExcerpt")
+        if source_line:
+            self.assertNotIn(source_line, serialized)
 
     def test_repeat_detector_blocks_copy_and_return_to_opening_topic(self):
         snapshot = create_snapshot("ENFP", "jiangmi")
@@ -905,6 +1059,40 @@ class CharacterCardContractTests(unittest.TestCase):
             snapshot, "linyu", "我也记住了你说的橙汁。今晚备菜时，我把冰箱第二格留给你。",
         ))
         self.assertIn("开场", detect_repetitive_agent_reply(snapshot, "linyu", "所以你为什么会来这里？") or "")
+
+    def test_repeat_detector_accepts_legacy_string_topic_ledger(self):
+        snapshot = create_snapshot("ENFP", "jiangmi")
+        snapshot["agentConversations"]["linyu"] = {
+            "turnCount": 1,
+            "topicLedger": ["集体自我介绍与参加来意"],
+        }
+        self.assertIsNone(detect_repetitive_agent_reply(
+            snapshot, "linyu", "我想先把今晚的备菜分工说清楚。",
+        ))
+
+    def test_agent_turn_rejects_task_only_stay_reason_and_impossible_time(self):
+        snapshot = snapshot_with_character("qiaolan")
+        snapshot["nodeId"] = "guided-chat"
+        snapshot["echoMemories"].append({
+            "characterId": "qiaolan", "agentReply": "我们先从眼前的小事聊。",
+            "summary": "双方已完成第一次问候",
+        })
+        card = CHARACTER_CARD_MAP["qiaolan"]
+        task_only = valid_turn(card)
+        task_only["dialogue"] = "我留下，是因为休息室的灯架还没修好。现在我会先把它固定住。"
+        with self.assertRaisesRegex(ValueError, "与人和关系"):
+            validate_agent_turn(card, task_only, snapshot, "你为什么还留在这里？")
+        relational = valid_turn(card)
+        relational["dialogue"] = "我留下，是想看看有没有人愿意跟我一起把一件小事做完，而不是只听我讲完就点头。"
+        relational["proposedEventId"] = None
+        self.assertEqual(
+            relational["dialogue"],
+            validate_agent_turn(card, relational, snapshot, "你为什么还留在这里？")["dialogue"],
+        )
+        impossible_time = valid_turn(card)
+        impossible_time["dialogue"] = "我想继续认识你，也想和你互相照顾。今晚早餐我们一人负责一半。"
+        with self.assertRaisesRegex(ValueError, "时间矛盾"):
+            validate_agent_turn(card, impossible_time, snapshot, "那我们接下来做什么？")
 
     def test_contextual_turn_records_who_when_where_and_topic(self):
         snapshot = create_snapshot("ENFP", "jiangmi")
