@@ -8,7 +8,8 @@ from unittest.mock import patch
 from fastapi import HTTPException
 
 import backend.app as app_module
-from backend.app import _enforce_agent_rate_limit, _require_user
+import backend.init_db as init_db_module
+from backend.app import _db_schema, _enforce_agent_rate_limit, _require_user
 
 
 class PublicAuthTests(unittest.TestCase):
@@ -51,6 +52,20 @@ class PublicRateLimitTests(unittest.TestCase):
             with self.assertRaises(HTTPException) as raised:
                 _enforce_agent_rate_limit("public:b")
         self.assertEqual(raised.exception.status_code, 429)
+
+
+class DatabaseSchemaTests(unittest.TestCase):
+    def test_humanlike_schema_is_shared_by_runtime_and_initializer(self) -> None:
+        with patch.dict(os.environ, {"DB_SCHEMA": "xindong_journey_humanlike"}, clear=False):
+            self.assertEqual(_db_schema(), "xindong_journey_humanlike")
+            self.assertEqual(init_db_module.schema_name(), "xindong_journey_humanlike")
+
+    def test_unsafe_schema_identifier_is_rejected(self) -> None:
+        with patch.dict(os.environ, {"DB_SCHEMA": "public; DROP SCHEMA public"}, clear=False):
+            with self.assertRaises(RuntimeError):
+                _db_schema()
+            with self.assertRaises(RuntimeError):
+                init_db_module.schema_name()
 
 
 if __name__ == "__main__":

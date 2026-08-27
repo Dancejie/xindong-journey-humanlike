@@ -13,6 +13,7 @@ import psycopg
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from psycopg import sql
 from psycopg.rows import dict_row
 
 from backend.agent_prompt import (
@@ -72,16 +73,32 @@ def _load_props(path: str) -> dict[str, str]:
     return props
 
 
+def _db_schema() -> str:
+    schema = os.getenv("DB_SCHEMA", "xindong_journey_humanlike").strip()
+    if not re.fullmatch(r"[a-z_][a-z0-9_]{0,62}", schema):
+        raise RuntimeError("DB_SCHEMA must be a safe PostgreSQL identifier")
+    return schema
+
+
+def _configure_db_schema(conn: psycopg.Connection) -> psycopg.Connection:
+    conn.execute(
+        sql.SQL("SET search_path TO {}, public").format(sql.Identifier(_db_schema()))
+    )
+    return conn
+
+
 def _get_db_conn() -> psycopg.Connection:
     database_url = os.getenv("DATABASE_URL", "").strip()
     if database_url:
-        return psycopg.connect(database_url, row_factory=dict_row)
+        return _configure_db_schema(psycopg.connect(database_url, row_factory=dict_row))
     props = _load_props("db.properties")
     if not props.get("db.host"):
         raise HTTPException(status_code=503, detail="数据库尚未配置")
-    return psycopg.connect(
-        host=props["db.host"], port=int(props["db.port"]), dbname=props["db.database"],
-        user=props["db.username"], password=props["db.password"], row_factory=dict_row,
+    return _configure_db_schema(
+        psycopg.connect(
+            host=props["db.host"], port=int(props["db.port"]), dbname=props["db.database"],
+            user=props["db.username"], password=props["db.password"], row_factory=dict_row,
+        )
     )
 
 
@@ -289,6 +306,7 @@ def health() -> dict:
         "authMode": os.getenv("APP_AUTH_MODE", "sso"),
         "agentProvider": "deepseek" if os.getenv("DEEPSEEK_API_KEY") else "unconfigured",
         "databaseConfigured": bool(os.getenv("DATABASE_URL") or _load_props("db.properties").get("db.host")),
+        "databaseSchema": _db_schema(),
     }
 
 

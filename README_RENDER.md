@@ -2,7 +2,7 @@
 
 这个仓库包含完整 React/FastAPI 版本、16 张人物卡（8 种 MBTI，每型一男一女）、单局 8 人/4 男 4 女阵容、16 位动态肖像、四套性别匹配剧情事件视频、事件驱动剧情状态机，以及服务端 DeepSeek 角色 Agent。
 
-本文件只描述独立的“人味增强版”部署。原版 `Dancejie/xindong-journey-echo`、`xindong-journey-echo.onrender.com` 及其数据库保持不变；可审计边界见 `INSTANCE_PROVENANCE.md`。
+本文件只描述独立的“人味增强版”部署。原版 `Dancejie/xindong-journey-echo` 与 `xindong-journey-echo.onrender.com` 保持不变；两个服务共用账号现有的免费 PostgreSQL 实例，但人味增强版固定使用独立 schema `xindong_journey_humanlike`，不会读写原版表。可审计边界见 `INSTANCE_PROVENANCE.md`。
 
 ## 架构
 
@@ -16,7 +16,8 @@
 仓库根目录的 `render.yaml` 会创建：
 
 1. Python Web Service：`xindong-journey-humanlike`
-2. Render PostgreSQL：`xindong-journey-humanlike-db`
+
+它会通过 Render 的 `fromDatabase` 引用同一 Workspace 中已有的 `xindong-journey-db`，并把所有表创建在独立 schema `xindong_journey_humanlike`。这是为了遵守 Render 每个账号只能同时拥有一个活跃 Free PostgreSQL 的限制，同时保持两套应用的数据表隔离。
 
 在 Render Dashboard 新建 Blueprint，选择本仓库。首次同步时填写：
 
@@ -28,7 +29,7 @@ DEEPSEEK_API_KEY=你的有效 DeepSeek API Key
 
 若 Agent 返回 `DeepSeek 角色判断暂时没有完成（http-402）`，DeepSeek 官方含义是账户余额不足。请在 DeepSeek Billing 检查与充值，或在 Render 中替换 `DEEPSEEK_API_KEY`；不需要把 Key 写回 GitHub。
 
-Blueprint 默认使用 Free Web Service 和 Free PostgreSQL，适合演示。Render 官方当前说明 Free PostgreSQL 会在创建 30 天后到期，长期运行应升级数据库计划。
+Blueprint 默认使用 Free Web Service，并复用账号现有的 Free PostgreSQL，适合演示。Render 官方当前说明 Free PostgreSQL 会在创建 30 天后到期，长期运行应升级数据库计划。
 
 通过 R5 人物与内容审核的剧情片首次播放为一次性有声过场；自然结束后自动进入逐字旁白。同一素材只在正文阶段作为静音循环背景，不承担剧情推进闸门。旧姜米自我介绍因没有可辨人物台词已被暂时下线，等待八位嘉宾各自的有声版本。
 

@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import os
+import re
 import psycopg
+from psycopg import sql
 
 
 def load_db_props(path: str = "../db.properties") -> dict[str, str]:
@@ -61,13 +63,27 @@ CREATE INDEX IF NOT EXISTS idx_agent_memories_owner_character ON agent_memories(
 """
 
 
+def schema_name() -> str:
+    value = os.getenv("DB_SCHEMA", "xindong_journey_humanlike").strip()
+    if not re.fullmatch(r"[a-z_][a-z0-9_]{0,62}", value):
+        raise RuntimeError("DB_SCHEMA must be a safe PostgreSQL identifier")
+    return value
+
+
+def prepare_schema(conn: psycopg.Connection) -> None:
+    identifier = sql.Identifier(schema_name())
+    conn.execute(sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(identifier))
+    conn.execute(sql.SQL("SET search_path TO {}, public").format(identifier))
+
+
 def main() -> None:
     database_url = os.getenv("DATABASE_URL", "").strip()
     if database_url:
         with psycopg.connect(database_url) as conn:
+            prepare_schema(conn)
             conn.execute(SCHEMA)
             conn.commit()
-        print("[init_db] DATABASE_URL schema ready")
+        print(f"[init_db] DATABASE_URL schema ready: {schema_name()}")
         return
     props = load_db_props()
     if not props.get("db.host"):
@@ -77,9 +93,10 @@ def main() -> None:
         host=props["db.host"], port=int(props["db.port"]), dbname=props["db.database"],
         user=props["db.username"], password=props["db.password"],
     ) as conn:
+        prepare_schema(conn)
         conn.execute(SCHEMA)
         conn.commit()
-    print("[init_db] done")
+    print(f"[init_db] done: {schema_name()}")
 
 
 if __name__ == "__main__":

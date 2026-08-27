@@ -11,7 +11,7 @@
 
 - GitHub：`https://github.com/Dancejie/xindong-journey-humanlike`
 - Render Web Service：`xindong-journey-humanlike`
-- Render PostgreSQL：`xindong-journey-humanlike-db`
+- Render PostgreSQL：复用 `xindong-journey-db` 实例，仅使用独立 schema `xindong_journey_humanlike`
 - 角色 Agent：DeepSeek 只读取当前人物卡、当前剧情节点、已提交 memory 与当前会话上下文；结构化台词、态度、策略候选仍由确定性合同校验后才可落库。
 - 开局：优先使用已校验台本缓存；新增角色缓存未命中时立即安装确定性首幕，不在“正在开启”阶段等待完整九节点 LLM 生成。后续已提交节点按需请求人物化改写。
 
