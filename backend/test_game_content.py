@@ -12,6 +12,7 @@ from backend.game_content import (
     CONTENT_VERSION,
     DAY1_MEDIA_CONTRACT,
     LEGACY_CAST_IDS,
+    MEDIA_ROTATION_ANCHORS,
     NODES,
     RELATIONSHIP_AXES,
     _public_character,
@@ -200,17 +201,28 @@ class CharacterCardContractTests(unittest.TestCase):
             self.assertEqual(rotation, media_rotation_for(card["id"], "stable-run"))
             self.assertEqual(CHARACTER_MAP[card["id"]]["gender"], rotation["leadGender"])
             self.assertIn(card["mbti"], rotation["selectionBucket"])
-            expected_prefix = "M-" if rotation["leadGender"] == "男性" else "F-"
-            self.assertTrue(rotation["slot"].startswith(expected_prefix))
+            if rotation["slot"]:
+                expected_prefix = "M-" if rotation["leadGender"] == "男性" else "F-"
+                self.assertTrue(rotation["slot"].startswith(expected_prefix))
+                self.assertEqual(card["id"], rotation["anchorCharacterId"])
+            else:
+                self.assertEqual("exact-player-fallback", rotation["mode"])
+                self.assertEqual(card["id"], rotation["anchorCharacterId"])
             self.assertEqual(rotation["leadGender"], CHARACTER_MAP[rotation["anchorCharacterId"]]["gender"])
 
     def test_media_rotation_is_event_specific_and_independent_of_run_id(self):
         event_asset_ids = [contract["assetId"] for contract in DAY1_MEDIA_CONTRACT.values()]
+        exact_anchors = set(MEDIA_ROTATION_ANCHORS.values())
         for card in CHARACTER_CARDS:
             rotations_a = [media_rotation_for(card["id"], "run-a", event_id) for event_id in event_asset_ids]
             rotations_b = [media_rotation_for(card["id"], "run-b", event_id) for event_id in event_asset_ids]
             self.assertEqual(rotations_a, rotations_b)
-            self.assertEqual(2, len({rotation["slot"] for rotation in rotations_a}))
+            if card["id"] in exact_anchors:
+                self.assertEqual(1, len({rotation["slot"] for rotation in rotations_a}))
+                self.assertTrue(all(rotation["anchorCharacterId"] == card["id"] for rotation in rotations_a))
+            else:
+                self.assertEqual({""}, {rotation["slot"] for rotation in rotations_a})
+                self.assertTrue(all(rotation["anchorCharacterId"] == card["id"] for rotation in rotations_a))
             self.assertTrue(all(rotation["leadGender"] == CHARACTER_MAP[card["id"]]["gender"] for rotation in rotations_a))
             self.assertTrue(all(rotation["eventId"] in event_asset_ids for rotation in rotations_a))
 
@@ -229,7 +241,7 @@ class CharacterCardContractTests(unittest.TestCase):
         self.assertEqual("女性", media["leadGender"])
         self.assertEqual("approved-gender-rotation", media["selectionReason"])
 
-    def test_rotation_uses_an_in_cast_same_gender_anchor_instead_of_a_stranger(self):
+    def test_rotation_never_borrows_an_in_cast_same_gender_anchor_for_the_player(self):
         assets = {
             "D1-A3-cast-introductions--rotation-M-A-chengye": {
                 "path": "/media/video/chengye.mp4", "status": "approved-runtime", "leadGender": "男性",
@@ -246,9 +258,9 @@ class CharacterCardContractTests(unittest.TestCase):
             rotation={"slot": "M-A-chengye", "leadGender": "男性", "anchorCharacterId": "chengye", "eventId": "D1-A3-cast-introductions"},
             asset_map=assets,
         )
-        self.assertEqual("D1-A3-cast-introductions--rotation-M-B-hechuan", media["assetId"])
-        self.assertEqual("M-B-hechuan", media["rotationSlot"])
-        self.assertEqual(["hechuan"], media["identityCast"])
+        self.assertEqual("CHAR-peiran-portrait", media["assetId"])
+        self.assertIsNone(media["rotationSlot"])
+        self.assertEqual(["peiran"], media["identityCast"])
         self.assertTrue(set(media["identityCast"]).issubset(cast_ids))
 
     def test_rotation_with_any_out_of_cast_visible_person_falls_back_to_player(self):
@@ -547,17 +559,29 @@ class CharacterCardContractTests(unittest.TestCase):
             media["plannedSrc"],
         )
 
-    def test_legacy_bare_montage_is_superseded_by_gender_rotation(self):
+    def test_legacy_bare_montage_uses_exact_player_fallback_not_gender_rotation(self):
         snapshot = create_snapshot("INTJ", "shenmo")
         snapshot["nodeId"] = "cast-first-impressions"
 
         media = project_view(snapshot)["mediaContext"]
 
-        self.assertEqual("gender-rotation", media["routingMode"])
+        self.assertEqual("current-eight", media["routingMode"])
         self.assertEqual(active_cast_ids(snapshot), media["requiredIdentityCast"])
-        self.assertTrue(media["assetId"].startswith("D1-A3B-cast-first-impressions--rotation-M-"))
+        self.assertEqual("CHAR-shenmo-portrait", media["assetId"])
+        self.assertEqual(["shenmo"], media["identityCast"])
         self.assertEqual("男性", media["leadGender"])
         self.assertNotEqual("/media/video/D1-A3B-cast-first-impressions.mp4", media["src"])
+
+    def test_every_protagonist_day1_path_keeps_the_selected_identity_visible(self):
+        for card in CHARACTER_CARDS:
+            snapshot = create_snapshot(card["mbti"], card["id"])
+            for node_id in NODES:
+                snapshot["nodeId"] = node_id
+                media = project_view(snapshot)["mediaContext"]
+                self.assertIn(
+                    card["id"], media["identityCast"],
+                    f"{card['id']} -> {node_id} routed to {media['assetId']}",
+                )
 
     def test_fallback_introductions_are_direct_character_specific_speech(self):
         for card in CHARACTER_CARDS:

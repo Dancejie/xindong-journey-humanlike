@@ -852,8 +852,31 @@ function Landing({ characters, onStart, busy, startError }: { characters: Charac
           <div className="selection-step-heading"><span>本季开放 8 种人格</span><small>每种都有男性与女性角色</small></div>
           <div className="mbti-grid">
             {availableMbtis.map(mbti => {
-              const count = characters.filter(character => character.mbti === mbti).length
-              return <button key={mbti} onClick={() => chooseMbti(mbti)} aria-label={`选择 ${mbti}，有 ${count} 位角色`}><b>{mbti}</b><span>{count >= 2 ? '一男一女 · 2 位角色' : `${count} 位角色`}</span><i>→</i></button>
+              const mbtiCharacters = characters.filter(character => character.mbti === mbti)
+              const previewCharacters = [...mbtiCharacters]
+                .sort((left, right) => {
+                  const genderRank = (character: Character) => character.gender === '男性' ? 0 : character.gender === '女性' ? 1 : 2
+                  return genderRank(left) - genderRank(right)
+                })
+                .slice(0, 2)
+              const roleSummary = previewCharacters.map(character => `${character.gender || '嘉宾'}${character.name}`).join('、')
+              return <button key={mbti} onClick={() => chooseMbti(mbti)} aria-label={`选择 ${mbti}，${roleSummary || `有 ${mbtiCharacters.length} 位角色`}`}>
+                <span className="mbti-card__copy">
+                  <b>{mbti}</b>
+                  <span className="mbti-card__meta">{mbtiCharacters.length >= 2 ? '一男一女 · 2 位角色' : `${mbtiCharacters.length} 位角色`}</span>
+                </span>
+                <span className="mbti-card__faces">
+                  {previewCharacters.map(character => <img
+                    key={character.id}
+                    src={character.portrait}
+                    alt={`${mbti} ${character.gender || '嘉宾'}角色${character.name}`}
+                    title={`${character.name} · ${character.gender || '嘉宾'}`}
+                    loading="lazy"
+                    decoding="async"
+                  />)}
+                </span>
+                <i aria-hidden="true">→</i>
+              </button>
             })}
           </div>
           <button className="selection-back" onClick={() => setPhase('intro')}>← 返回节目介绍</button>

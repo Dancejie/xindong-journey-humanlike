@@ -13,7 +13,7 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parent.parent
 RELATIONSHIP_AXES = ("trust", "affection", "respect", "fear", "debt", "attraction", "resentment")
 ATTITUDES = {"warm", "curious", "guarded", "challenging", "vulnerable", "softened", "uncertain", "honest", "moved", "careful", "steady", "boundary"}
-CONTENT_VERSION = "3.8.0-humanlike-fewshots"
+CONTENT_VERSION = "3.9.0-exact-character-media"
 CHAT_CONTEXT_VERSION = 1
 CHAT_LOCATIONS = {
     "hotel-entrance": {"name": "酒店玄关", "supportsGroup": True},
@@ -383,14 +383,17 @@ def media_rotation_for(
     seed: str,
     event_id: str | None = None,
 ) -> dict[str, Any]:
-    """Choose a same-gender reusable video scheme for one event.
+    """Choose the only identity-safe reusable video scheme for one event.
 
-    ``selectionBucket`` determines the character's preferred scheme. Event
-    routing then uses a stable hash of ``playerCharacterId + eventId`` to
-    alternate between the two same-gender schemes. This keeps reloads
-    deterministic without showing one lead image for the whole run.
-    ``seed`` remains in the signature for snapshot compatibility; R6 event
-    routing deliberately does not depend on the randomly generated run id.
+    A generated rotation clip may be shown as the protagonist's performance
+    only when its anchor character *is* the selected protagonist.  The four
+    R6 anchors keep their own event set; every other character falls back to
+    their exact dynamic portrait/static poster until an exact event variant is
+    approved.  Same-gender resemblance is not an identity match.
+
+    ``seed`` remains in the signature for snapshot compatibility.  For a
+    non-anchor character we return explicit exact-player-fallback metadata;
+    no other person's ID is kept in the public snapshot as a pretend anchor.
     """
     del seed
     if perspective_character_id not in CHARACTER_MAP:
@@ -399,12 +402,20 @@ def media_rotation_for(
     gender = character["gender"]
     mbti = character["mbti"]
     slots = ("M-A-chengye", "M-B-hechuan") if gender == "男性" else ("F-A-jiangmi", "F-B-luyao")
-    preferred_index = next(
-        (index for index, slot_id in enumerate(slots) if mbti in MEDIA_ROTATION_SELECTION_BUCKETS[slot_id]),
-        0,
+    exact_slot = next(
+        (slot_id for slot_id in slots if MEDIA_ROTATION_ANCHORS[slot_id] == perspective_character_id),
+        "",
     )
-    event_bucket = _stable_index(perspective_character_id, f"media-rotation:{event_id}", len(slots)) if event_id else 0
-    slot = slots[(preferred_index + event_bucket) % len(slots)]
+    if not exact_slot:
+        return {
+            "slot": "",
+            "leadGender": gender,
+            "anchorCharacterId": perspective_character_id,
+            "selectionBucket": [mbti],
+            "eventId": event_id,
+            "mode": "exact-player-fallback",
+        }
+    slot = exact_slot
     return {
         "slot": slot,
         "leadGender": gender,
@@ -771,11 +782,10 @@ def resolve_identity_safe_media(
             selected_asset_id, selected_asset = candidate_id, candidate
             break
 
-    # The formal version may reuse one of four approved reenactment sets (two
-    # per protagonist gender) instead of generating every event for all 16
-    # identities. Exact-cast footage above always wins. A rotation clip is
-    # accepted only when every visible person belongs to this season's eight-
-    # person cast; otherwise it would introduce a stranger under a real name.
+    # Exact-cast footage above always wins.  A generated rotation clip is only
+    # a valid protagonist performance when its anchor is the selected player.
+    # Merely matching gender (the former R6 policy) can place Chengye or Hechuan
+    # behind a run explicitly started as Lichuan, which is an identity error.
     rotation_asset_id = ""
     selected_rotation_slot = ""
     selected_rotation_cast: list[str] = []
@@ -789,6 +799,7 @@ def resolve_identity_safe_media(
         and rotation_gender == player_gender
         and rotation_slot in allowed_rotation_slots
         and MEDIA_ROTATION_ANCHORS.get(rotation_slot) == rotation_anchor
+        and rotation_anchor == perspective_character_id
         and rotation_anchor in CHARACTER_MAP
         and CHARACTER_MAP[rotation_anchor]["gender"] == player_gender
     )
