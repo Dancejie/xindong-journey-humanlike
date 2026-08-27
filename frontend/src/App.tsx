@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { Icon } from './ui/Icon'
 import './styles.css'
 
 type Character = {
@@ -625,7 +626,7 @@ function EventMediaVideo({ src, className = '', poster, onError, onCanPlay, onTi
   return <>
     <video ref={videoRef} className={className} src={src} poster={poster} autoPlay={active} muted={playback.muted} playsInline preload={preload || (active ? 'auto' : 'metadata')} onCanPlay={onCanPlay} onError={onError} onTimeUpdate={event => onTimeUpdate?.(event.currentTarget.currentTime)} onEnded={playback.handleEnded} />
     {active && <button type="button" className={`scene-audio-toggle ${playback.needsGesture ? 'scene-audio-toggle--attention' : ''}`} onClick={playback.toggleSound} aria-label={playback.muted ? '开启视频声音' : '关闭视频声音'} aria-pressed={!playback.muted}>
-      <span aria-hidden="true">{playback.muted ? '🔇' : '🔊'}</span><b>{playback.soundLabel}</b>
+      <span aria-hidden="true"><Icon name={playback.muted ? 'volume-off' : 'volume-on'} tone="rose" /></span><b>{playback.soundLabel}</b>
     </button>}
   </>
 }
@@ -716,7 +717,7 @@ function SceneMedia({ src, poster, fallbackSrc, fallbackPoster, active, cue, ass
 }
 
 function HeartMark({ small = false }: { small?: boolean }) {
-  return <span className={small ? 'heart-mark heart-mark--small' : 'heart-mark'} aria-hidden="true">♡</span>
+  return <span className={small ? 'heart-mark heart-mark--small' : 'heart-mark'} aria-hidden="true"><Icon name="heart" tone="rose" size={small ? 24 : 64} /></span>
 }
 
 function CharacterIdentityPlate({ identity, context = '嘉宾登场', className = '', durationSeconds = 3.4 }: { identity: SceneIdentityCard; context?: string; className?: string; durationSeconds?: number }) {
@@ -840,7 +841,7 @@ function Landing({ characters, onStart, busy, startError }: { characters: Charac
           <h2>七天六夜，故事从第一声“你好”开始。</h2>
           <p>欢迎来到《心动之旅》。八位来自不同生活轨迹的嘉宾，将在海岛酒店一起生活七天六夜。从初次见面、一起做饭，到组队约会和每晚的心动短信，共同生活的衣食住行会碰撞出怎样的火花？让我们一起期待。</p>
           <blockquote>帮助别人，也照见自己。找到一位愿意同行的人，更好地发现自己、爱自己。</blockquote>
-          <button className="primary-button start-button" onClick={() => { unlockAudioIntent(); setPhase('mbti') }}><span>先选择你的 MBTI</span><i>→</i></button>
+          <button className="primary-button start-button" onClick={() => { unlockAudioIntent(); setPhase('mbti') }}><span>先选择你的 MBTI</span><i><Icon name="arrow-right" /></i></button>
         </section>
       </> : phase === 'mbti' ? <>
         <section className="landing-copy landing-copy--selection">
@@ -875,11 +876,11 @@ function Landing({ characters, onStart, busy, startError }: { characters: Charac
                     decoding="async"
                   />)}
                 </span>
-                <i aria-hidden="true">→</i>
+                <i aria-hidden="true"><Icon name="arrow-right" size={16} tone="rose" /></i>
               </button>
             })}
           </div>
-          <button className="selection-back" onClick={() => setPhase('intro')}>← 返回节目介绍</button>
+          <button className="selection-back" onClick={() => setPhase('intro')}><Icon name="arrow-left" size={15} />返回节目介绍</button>
         </section>
       </> : <>
         <section className="landing-copy landing-copy--role">
@@ -891,7 +892,7 @@ function Landing({ characters, onStart, busy, startError }: { characters: Charac
           <div className="role-picker">
             {roleOptions.map(character => <button key={character.id} className={character.id === selected?.id ? 'active' : ''} disabled={busy} onClick={() => setSelectedId(character.id)} style={{ '--accent': character.accent } as React.CSSProperties} aria-pressed={character.id === selected?.id} aria-label={`选择${character.gender || ''}角色${character.name}，${publicOccupation(character)}，${character.tagline}`}>
               <img src={character.portrait} alt={`${character.name}头像`} />
-              <span><em>{character.gender || '嘉宾'}</em><b>{character.name}</b><small>{publicOccupation(character)}</small><small>{character.tagline}</small></span><i>→</i>
+              <span><em>{character.gender || '嘉宾'}</em><b>{character.name}</b><small>{publicOccupation(character)}</small><small>{character.tagline}</small></span><i><Icon name="arrow-right" size={17} tone="rose" /></i>
             </button>)}
           </div>
           {selected ? <section className="character-preview glass-card" style={{ '--accent': selected.accent } as React.CSSProperties}>
@@ -900,12 +901,12 @@ function Landing({ characters, onStart, busy, startError }: { characters: Charac
             <p>{selected.independentInterest}</p>
             <dl><div><dt>表达方式</dt><dd>{selected.voice}</dd></div><div><dt>关系边界</dt><dd>{selected.boundary}</dd></div></dl>
             {selected.mediaStatus === 'planned' && <p className="static-media-note">当前以静态人物图进入；动态形象准备完成后会自动启用，不会借用其他嘉宾的视频。</p>}
-            <button className="primary-button start-button" disabled={busy} onClick={() => { unlockAudioIntent(); onStart(selected.mbti, selected.id) }}><span>{busy ? STARTUP_STAGE_LABELS[startupStage] : startError ? '重新尝试开启' : `跟随${selected.name}进入小屋`}</span><i>{busy ? '···' : '→'}</i></button>
+            <button className="primary-button start-button" disabled={busy} onClick={() => { unlockAudioIntent(); onStart(selected.mbti, selected.id) }}><span>{busy ? STARTUP_STAGE_LABELS[startupStage] : startError ? '重新尝试开启' : `跟随${selected.name}进入小屋`}</span><i>{busy ? '···' : <Icon name="arrow-right" />}</i></button>
             {(busy || startError) && <p className={`role-start-feedback ${startError ? 'role-start-feedback--error' : ''}`} role={startError ? 'alert' : 'status'} aria-live="polite">
               {startError || (startupStage < 3 ? '正在建立本局，不会等待视频下载，也无需重复点击。' : '人物图片会先陪你等待；动态画面进入剧情后再加载。')}
             </p>}
           </section> : <div className="role-empty glass-card"><span>选择一位角色</span><p>点击上方的男性或女性角色，先读完人物详情，再决定是否以 TA 的视角开局。</p></div>}
-          <button className="selection-back" disabled={busy} onClick={() => { setSelectedId(''); setPhase('mbti') }}>← 重新选择 MBTI</button>
+          <button className="selection-back" disabled={busy} onClick={() => { setSelectedId(''); setPhase('mbti') }}><Icon name="arrow-left" size={15} />重新选择 MBTI</button>
         </section>
       </>}
     </main>
@@ -947,7 +948,7 @@ function HeartInboxPhone({ snapshot, characters }: { snapshot: Snapshot; charact
           <p>{outgoing.text}</p>
         </article>}
       </div>
-      <footer><span>来自本轮真实收发记录</span><i>●</i></footer>
+      <footer><span>来自本轮真实收发记录</span><i><Icon name="status-dot" size={13} tone="rose" /></i></footer>
     </section>
   )
 }
@@ -977,7 +978,7 @@ function HeartMessageComposer({ choices, characters, busy, disabled, onSend }: {
           return <button type="button" role="listitem" className={selected ? 'selected' : ''} key={choice.id} onClick={() => setSelectedId(choice.id)} disabled={busy || disabled} style={character ? { '--accent': character.accent } as React.CSSProperties : undefined} aria-pressed={selected}>
             {character && <img src={character.portrait} alt={`${character.name}头像`} />}
             <span><b>{character?.name || choice.label}</b><small>{character ? `${character.mbti} · ${publicOccupation(character)}` : choice.hint}</small></span>
-            <i>{selected ? '✓' : '○'}</i>
+            <i>{selected ? <Icon name="check" size={16} tone="rose" /> : <Icon name="radio-empty" size={16} tone="lavender" />}</i>
           </button>
         })}
       </div>
@@ -1003,7 +1004,7 @@ function FreeChoiceComposer({ choices, busy, disabled, onSend }: {
   return <section className="free-choice-composer" aria-label="自定义行动">
     <label><span>或者，用你自己的方式表达</span><textarea rows={2} maxLength={180} value={draft} onChange={event => setDraft(event.target.value)} placeholder="例如：先和大家打声招呼，再去看看有没有人需要帮忙…" /></label>
     <div className="free-choice-composer__routes"><span>这句话更接近</span>{choices.map((choice, index) => <button type="button" className={choice.id === route.id ? 'selected' : ''} aria-pressed={choice.id === route.id} key={choice.id} onClick={() => setRouteId(choice.id)}>方案 {String(index + 1).padStart(2, '0')}</button>)}</div>
-    <button className="free-choice-composer__send" type="button" disabled={busy || disabled || !draft.trim()} onClick={() => onSend(route, draft.trim())}>{busy ? '正在写入故事…' : '用这句话推进剧情 →'}</button>
+    <button className="free-choice-composer__send" type="button" disabled={busy || disabled || !draft.trim()} onClick={() => onSend(route, draft.trim())}><span>{busy ? '正在写入故事…' : '用这句话推进剧情'}</span><Icon className={busy ? 'ui-icon--placeholder' : ''} name="arrow-right" size={17} /></button>
     <small>当前剧情仍沿你选中的行动路线推进；自定义原话会一并发送，供后端人物记忆接入。</small>
   </section>
 }
@@ -1073,7 +1074,7 @@ function CharacterDock({ characters, snapshot, chatContexts, guidedCharacterId, 
           }
           return (
             <button ref={guided ? guidedRef : undefined} className={`dock-avatar ${guided ? 'dock-avatar--guided' : ''} ${chatUnavailable ? 'dock-avatar--unavailable' : ''} ${isSelf ? 'dock-avatar--self' : ''}`} key={character.id} onClick={() => !chatUnavailable && onOpen(character, context)} disabled={chatUnavailable} style={{ '--accent': character.accent } as React.CSSProperties} aria-label={isSelf ? `${character.name}，你的当前视角，不可与自己私聊` : chatUnavailable ? `${character.name}，当前暂不可私聊` : guided ? `剧情正在等你，与${character.name}交流` : `在${venue?.locationName || currentLocation}与${character.name}交流，${character.mbti}，${character.tagline}`}>
-              <span className="dock-avatar__photo"><img src={character.portrait} alt="" />{(guided || memoryCount > 0) && <i className={guided ? `guided-badge ${guidedComplete ? 'guided-badge--done' : ''}` : ''}>{guided ? (guidedComplete ? '✓' : 1) : memoryCount}</i>}</span>
+              <span className="dock-avatar__photo"><img src={character.portrait} alt="" />{(guided || memoryCount > 0) && <i className={guided ? `guided-badge ${guidedComplete ? 'guided-badge--done' : ''}` : ''}>{guided ? (guidedComplete ? <Icon name="check" size={10} /> : 1) : memoryCount}</i>}</span>
               <span className="dock-avatar__copy"><span><b>{character.name}</b><em>{character.mbti}</em></span><small className="dock-avatar__role">{publicOccupation(character)} · {character.gender || '嘉宾'}</small><small>{isSelf ? '你的视角 · 不可私聊' : chatUnavailable ? '当前剧情中暂不可私聊' : `${venue?.locationName || currentLocation} · ${character.tagline}`}</small></span>
             </button>
           )
@@ -1194,7 +1195,7 @@ function ChatSheet({ character, characters, snapshot, embeddedOpener, context, e
               : <img className="chat-portrait__subject chat-portrait__subject--static" src={character.portrait} alt={`${character.name}静态人物形象`} />}
           </div>
           <div className="chat-portrait__scrim" />
-          <button className="close-button" onClick={onClose} aria-label="关闭私聊">×</button>
+          <button className="close-button" onClick={onClose} aria-label="关闭私聊"><Icon name="close" size={24} /></button>
           <div className="chat-identity"><span>{character.mbti}</span><h2>{character.name}</h2><p>{publicOccupation(character)} · {character.tagline}</p><small>{currentLocation}{currentTime ? ` · ${currentTime}` : ''}</small></div>
           <div className="memory-seal"><HeartMark small /><span>{memories.length ? `${memories.length} 段共同记忆` : '从这一句话开始记住你'}</span></div>
         </div>
@@ -1224,7 +1225,7 @@ function ChatSheet({ character, characters, snapshot, embeddedOpener, context, e
           {error && <p className="chat-error" role="alert">{error}</p>}
           <form className="chat-composer" onSubmit={submit}>
             <textarea ref={inputRef} value={draft} maxLength={240} rows={1} placeholder={`只对${character.name}说…`} onChange={e => setDraft(e.target.value)} />
-            <button type="submit" disabled={!draft.trim() || busy} aria-label="发送">↗</button>
+            <button type="submit" disabled={!draft.trim() || busy} aria-label="发送"><Icon name="arrow-up-right" size={22} /></button>
           </form>
           <p className="memory-rule">这段交流只进入 {character.name} 的记忆；边界与剧情事实由游戏规则裁决</p>
         </div>
@@ -1297,7 +1298,7 @@ function GroupChatSheet({ venue, characters, snapshot, busy, error, onClose, onS
       <div className="group-chat__scrim" />
       <header className="group-chat__header">
         <div><span>{venue.locationName} · {venue.time || snapshot.sceneContext?.time || '此刻'}</span><h2>和在场的人聊一会儿</h2><p>选择 2–4 位嘉宾；每个人都会依据自己的角色卡回应，并分别记住这次对话。</p></div>
-        <button type="button" onClick={onClose} aria-label="关闭群聊">×</button>
+        <button type="button" onClick={onClose} aria-label="关闭群聊"><Icon name="close" size={24} /></button>
       </header>
       <div className="group-chat__participants" aria-label="选择群聊嘉宾">
         {venue.characters.map(item => {
@@ -1305,7 +1306,7 @@ function GroupChatSheet({ venue, characters, snapshot, busy, error, onClose, onS
           const selected = selectedIds.includes(item.id)
           const unavailable = !selected && selectedIds.length >= 4
           return <button type="button" key={item.id} className={selected ? 'selected' : ''} disabled={unavailable || (selected && selectedIds.length <= 2)} onClick={() => toggleParticipant(item.id)} aria-pressed={selected}>
-            {character && <img src={character.portrait} alt="" />}<span><b>{item.name}</b><small>{item.mbti}</small></span><i>{selected ? '✓' : '+'}</i>
+            {character && <img src={character.portrait} alt="" />}<span><b>{item.name}</b><small>{item.mbti}</small></span><i>{selected ? <Icon name="check" size={15} tone="rose" /> : <Icon name="plus" size={15} tone="lavender" />}</i>
           </button>
         })}
       </div>
@@ -1326,7 +1327,7 @@ function GroupChatSheet({ venue, characters, snapshot, busy, error, onClose, onS
       {error && <p className="group-chat__error" role="alert">{error}</p>}
       <form className="group-chat__composer" onSubmit={submit}>
         <textarea rows={1} maxLength={240} value={draft} onChange={event => setDraft(event.target.value)} placeholder={`对${selectedCharacters.map(character => character.name).join('、') || '在场嘉宾'}说…`} />
-        <button type="submit" disabled={busy || selectedIds.length < 2 || !draft.trim()}>↗</button>
+        <button type="submit" disabled={busy || selectedIds.length < 2 || !draft.trim()} aria-label="发送群聊消息"><Icon name="arrow-up-right" size={22} /></button>
       </form>
       <p className="group-chat__rule">群聊只可邀请此刻确实在 {venue.locationName} 的嘉宾；不会补写不在场的人。</p>
     </section>
@@ -1352,8 +1353,8 @@ function Cinematic({ src, title, identityCards, identityTimeline, onDone }: { sr
       {ready && !!identityCards?.length && <SceneIdentitySequence cards={identityCards} sceneKey={src} timeline={identityTimeline} currentTime={currentTime} context="本幕嘉宾" className="scene-identity-plate--cinematic" />}
       <div className={`cinematic-title ${showTitle ? 'show' : ''}`}><span>HEART JOURNEY · STORY EVENT</span><b>{title}</b></div>
       <div className="cinematic-controls">
-        <button type="button" className={playback.needsGesture ? 'audio-attention' : ''} onClick={playback.toggleSound} aria-label={playback.muted ? '开启视频声音' : '关闭视频声音'} aria-pressed={!playback.muted}><span aria-hidden="true">{playback.muted ? '🔇' : '🔊'}</span>{playback.soundLabel}</button>
-        <button type="button" onClick={onDone}>跳过 →</button>
+        <button type="button" className={playback.needsGesture ? 'audio-attention' : ''} onClick={playback.toggleSound} aria-label={playback.muted ? '开启视频声音' : '关闭视频声音'} aria-pressed={!playback.muted}><span aria-hidden="true"><Icon name={playback.muted ? 'volume-off' : 'volume-on'} tone="rose" /></span>{playback.soundLabel}</button>
+        <button type="button" onClick={onDone}>跳过<Icon name="arrow-right" size={16} /></button>
       </div>
     </div>
   )
@@ -1677,9 +1678,9 @@ function Game({ view, onView, onRestart }: { view: View; onView: (view: View) =>
         {storyOverlayPhase === 'interaction' && <div className="story-reveal" data-story-layer="interaction">
           {snapshot.nodeId === 'callback' && <HeartInboxPhone snapshot={snapshot} characters={characters} />}
           {node.gameBrief && <GameBrief brief={node.gameBrief} />}
-          {snapshot.storyMission ? <DirectorMission mission={snapshot.storyMission} characters={characters} busy={busy} onResolve={resolveMission} /> : directorAvailable && memoriesDone && <button className="director-trigger" disabled={busy} onClick={directStory}><span><b>让剧情导演读取此刻的关系证据</b><small>从已研究的恋综事件库中激活下一项主任务</small></span><i>{busy ? '…' : '↗'}</i></button>}
+          {snapshot.storyMission ? <DirectorMission mission={snapshot.storyMission} characters={characters} busy={busy} onResolve={resolveMission} /> : directorAvailable && memoriesDone && <button className="director-trigger" disabled={busy} onClick={directStory}><span><b>让剧情导演读取此刻的关系证据</b><small>从已研究的恋综事件库中激活下一项主任务</small></span><i>{busy ? '…' : <Icon name="arrow-up-right" size={18} />}</i></button>}
           {(node.requiresMemory || node.requiresGuidedInteraction) && <div className={`link-proof ${(node.requiresGuidedInteraction ? requiredInteractionDone : eventDone) ? 'done' : ''} ${guidedCharacterId && !requiredInteractionDone ? 'guided' : ''}`}>
-            <span>{node.requiresGuidedInteraction && requiredInteractionDone ? '✓' : eventDone ? '✓' : interactionHasMemory ? '02' : '01'}</span><div><b>{node.requiresGuidedInteraction && requiredInteractionDone ? '破冰对话已完成，现在轮到你决定怎样邀请' : eventDone ? '专属事件已经进入正片' : interactionHasMemory ? '继续交流，让对方作出一个具体选择' : guidedCharacterId ? `剧情正在等你与${characters.find(character => character.id === guidedCharacterId)?.name || '指定嘉宾'}开口` : '先完成一次 1 对 1 交流'}</b><small>{node.requiresGuidedInteraction && requiredInteractionDone ? '对方已经记住你们的第一次真实来回' : eventDone ? snapshot.eventLedger[snapshot.eventLedger.length - 1]?.label : interactionHasMemory ? '角色会依据人物卡决定是否交出线索或邀约' : guidedCharacterId ? '下方对应头像已点亮“1”，先从自我介绍和寒暄开始' : '从一声招呼开始，不用一上来就谈任务'}</small></div>
+            <span>{node.requiresGuidedInteraction && requiredInteractionDone ? <Icon name="check" size={17} /> : eventDone ? <Icon name="check" size={17} /> : interactionHasMemory ? '02' : '01'}</span><div><b>{node.requiresGuidedInteraction && requiredInteractionDone ? '破冰对话已完成，现在轮到你决定怎样邀请' : eventDone ? '专属事件已经进入正片' : interactionHasMemory ? '继续交流，让对方作出一个具体选择' : guidedCharacterId ? `剧情正在等你与${characters.find(character => character.id === guidedCharacterId)?.name || '指定嘉宾'}开口` : '先完成一次 1 对 1 交流'}</b><small>{node.requiresGuidedInteraction && requiredInteractionDone ? '对方已经记住你们的第一次真实来回' : eventDone ? snapshot.eventLedger[snapshot.eventLedger.length - 1]?.label : interactionHasMemory ? '角色会依据人物卡决定是否交出线索或邀约' : guidedCharacterId ? '下方对应头像已点亮“1”，先从自我介绍和寒暄开始' : '从一声招呼开始，不用一上来就谈任务'}</small></div>
           </div>}
           {!!availableChoices.length && <section className={`choice-section ${node.characterChoice ? 'choice-section--cast' : ''}`} aria-label="剧情选择">
             <div className="choice-section__heading"><span>{node.characterChoice ? '今晚，你想把心动短信发给谁？' : '这一刻，你准备怎么做？'}</span><small>你的选择会改变接下来的相处</small></div>
@@ -1695,7 +1696,7 @@ function Game({ view, onView, onRestart }: { view: View; onView: (view: View) =>
                       <span className="icebreaker-card__person"><img src={character.portrait} alt={`${character.name}头像`} /><span><b>{character.name}<em>{character.mbti}</em></b><small>{publicOccupation(character)} · {character.tagline}</small></span></span>
                       <span className="icebreaker-card__action"><em>你要做什么</em><b>{choice.label}</b></span>
                       <span className="icebreaker-card__question"><em>三分钟内，问到这件小事</em><span>{choice.hint || character.independentInterest}</span></span>
-                      <i className="icebreaker-card__arrow">→</i>
+                      <i className="icebreaker-card__arrow"><Icon name="arrow-right" size={18} /></i>
                     </> : character ? <>
                       <img className="choice-character-photo" src={character.portrait} alt={`${character.name}头像`} />
                       <span className="choice-copy choice-copy--character">
@@ -1704,10 +1705,10 @@ function Game({ view, onView, onRestart }: { view: View; onView: (view: View) =>
                         <strong>{choice.label}</strong>
                         <small>{choice.hint}</small>
                       </span>
-                      <i>→</i>
+                      <i><Icon name="arrow-right" size={18} tone="rose" /></i>
                     </> : <>
                       <span className="choice-index">{String(index + 1).padStart(2, '0')}</span>
-                      <span className="choice-copy"><b>{choice.label}</b><small>{choice.hint}</small></span><i>→</i>
+                      <span className="choice-copy"><b>{choice.label}</b><small>{choice.hint}</small></span><i><Icon name="arrow-right" size={18} tone="rose" /></i>
                     </>}
                   </button>
                 )
