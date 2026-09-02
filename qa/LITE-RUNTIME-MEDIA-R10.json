@@ -5634,7 +5634,7 @@
   "backupDirectory": "frontend/.work-lite-media-r10/masters/video",
   "proofBoundary": "Delivery transcode only; it preserves runtime coverage and audio presence but does not expand rights clearance.",
   "verdict": "LITE_RUNTIME_MEDIA_PASS",
-  "lastVerifiedAt": "2026-09-02T20:04:01+08:00",
+  "lastVerifiedAt": "2026-09-02T20:17:32+08:00",
   "fullyDecoded": 165,
   "verificationFailures": []
 }

@@ -23,6 +23,7 @@ TEMP_FILES = [
     Path("/tmp/xindong-lite-sample-3.mp4"),
     Path("/tmp/xindong-lite-sample-contact.jpg"),
 ]
+TEMP_DIRS = sorted(Path("/tmp").glob("xindong-r10-contact.*"))
 
 
 def digest(path: Path) -> str:
@@ -62,7 +63,10 @@ def main() -> int:
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args()
     validate()
-    targets = [WORK, *TEMP_FILES]
+    for path in TEMP_DIRS:
+        if path.parent != Path("/tmp") or not path.name.startswith("xindong-r10-contact."):
+            raise RuntimeError(f"unsafe temporary cleanup target: {path}")
+    targets = [WORK, *TEMP_FILES, *TEMP_DIRS]
     existing = [path for path in targets if path.exists()]
     reclaimable = sum(tree_bytes(path) for path in existing)
     print(json.dumps({
@@ -73,7 +77,7 @@ def main() -> int:
     if not args.apply:
         return 0
     for path in existing:
-        if path == WORK:
+        if path == WORK or path in TEMP_DIRS:
             shutil.rmtree(path)
         else:
             path.unlink()
