@@ -13,14 +13,26 @@ services:
         value: 3.12.8
       - key: APP_AUTH_MODE
         value: public
+      - key: LLM_PROVIDER
+        value: deepseek
+      - key: DEEPSEEK_API_BASE
+        value: https://api.deepseek.com
       - key: DEEPSEEK_MODEL
         value: deepseek-v4-flash
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: DOTS_API_BASE
+        value: https://note3-prev-api.askdiandian.com/v1
+      - key: DOTS_MODEL
+        value: dots3-note-prev
+      - key: DOTS_ENABLE_THINKING
+        value: "false"
+      - key: DOTS_API_KEY
+        sync: false
       - key: AGENT_RATE_LIMIT
         value: "20"
       - key: AGENT_GLOBAL_RATE_LIMIT
         value: "200"
-      - key: DEEPSEEK_API_KEY
-        sync: false
       - key: DB_SCHEMA
         value: xindong_journey_humanlike
       - key: DATABASE_URL

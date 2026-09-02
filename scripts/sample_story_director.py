@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run three isolated DeepSeek story-director scenarios and save a compact local flavor report."""
+"""Run isolated story-director scenarios through the selected local LLM."""
 from __future__ import annotations
 
 import argparse
@@ -17,26 +17,15 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from backend.agent_prompt import extract_json  # noqa: E402
-from backend.game_content import CHARACTER_MAP, create_snapshot  # noqa: E402
+from backend.game_content import CHARACTER_MAP, active_cast_ids, create_snapshot  # noqa: E402
+from backend.llm_provider import call_text, provider_config  # noqa: E402
 from backend.story_director import (  # noqa: E402
     build_story_director_messages,
     commit_story_event,
     eligible_story_events,
     validate_story_director_output,
 )
-
-
-def load_env(path: Path) -> dict[str, str]:
-    values: dict[str, str] = {}
-    if not path.exists():
-        return values
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        values[key.strip()] = value.strip().strip('"').strip("'")
-    return values
+from scripts.llm_env import load_local_llm_env  # noqa: E402
 
 
 def add_memory(snapshot: dict, character_id: str, index: int, *, valence: int = 25, interpretation: str = "对方愿意把判断变成下一步行动") -> None:
@@ -55,15 +44,24 @@ def set_relationship(snapshot: dict, character_id: str, values: dict[str, int]) 
         snapshot["affection"][character_id] = values["affection"]
 
 
+def snapshot_with_cast(user_mbti: str, perspective_character_id: str, required_ids: set[str]) -> dict:
+    """Build a disposable comparison snapshot whose randomized roster contains the scenario cast."""
+    for _ in range(256):
+        snapshot = create_snapshot(user_mbti, perspective_character_id)
+        if required_ids.issubset(set(active_cast_ids(snapshot))):
+            return snapshot
+    raise RuntimeError(f"无法为剧情导演样片组出所需嘉宾：{sorted(required_ids)}")
+
+
 def scenarios() -> list[tuple[str, str, dict]]:
-    early = create_snapshot("INFP")
-    early["nodeId"] = "private-window"; early["storyArc"]["phase"] = "early"
+    early = snapshot_with_cast("INFP", "jiangmi", {"shenmo", "jiangmi"})
+    early["nodeId"] = "team-up"; early["storyArc"]["phase"] = "early"
     add_memory(early, "shenmo", 0); add_memory(early, "jiangmi", 0)
     set_relationship(early, "shenmo", {"trust": 2, "respect": 2, "attraction": 1})
     set_relationship(early, "jiangmi", {"trust": 1, "respect": 1, "attraction": 1})
 
-    triangle = create_snapshot("ENFP")
-    triangle["nodeId"] = "event-reveal"; triangle["storyArc"]["phase"] = "middle"
+    triangle = snapshot_with_cast("ENFP", "jiangmi", {"jiangmi", "shenmo", "chengye"})
+    triangle["nodeId"] = "callback"; triangle["storyArc"]["phase"] = "middle"
     for index in range(2):
         add_memory(triangle, "shenmo", index, valence=30)
         add_memory(triangle, "chengye", index, valence=35)
@@ -75,7 +73,7 @@ def scenarios() -> list[tuple[str, str, dict]]:
         {"eventId": "story.date.blind-box", "status": "completed"},
     ]
 
-    late = create_snapshot("INFJ")
+    late = snapshot_with_cast("INFJ", "shenmo", {"shenmo", "jiangwan", "linyu"})
     late["nodeId"] = "callback"; late["storyArc"]["phase"] = "late"
     for index in range(4):
         add_memory(late, "jiangwan", index, valence=35)
@@ -91,7 +89,7 @@ def scenarios() -> list[tuple[str, str, dict]]:
     ]
 
 
-async def request_one(client: httpx.AsyncClient, semaphore: asyncio.Semaphore, name: str, setup: str, snapshot: dict, api_key: str, base_url: str, model: str) -> dict:
+async def request_one(client: httpx.AsyncClient, semaphore: asyncio.Semaphore, name: str, setup: str, snapshot: dict, provider: str) -> dict:
     candidates = eligible_story_events(snapshot, limit=8)
     if not candidates:
         raise RuntimeError(f"{name} 没有候选事件")
@@ -101,14 +99,9 @@ async def request_one(client: httpx.AsyncClient, semaphore: asyncio.Semaphore, n
     for attempt in range(3):
         request_messages = messages if not last_error else [*messages, {"role": "user", "content": f"上一份 JSON 未通过事件合同：{last_error}。请重新输出完整 JSON；只写候选参与者的行动。"}]
         async with semaphore:
-            response = await client.post(
-                f"{base_url.rstrip('/')}/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json={"model": model, "messages": request_messages, "max_tokens": 1100, "stream": False, "thinking": {"type": "disabled"}},
-            )
-            response.raise_for_status()
-        choices = response.json().get("choices") or []
-        raw = str(choices[0].get("message", {}).get("content") or "").strip() if choices else ""
+            raw = (await call_text(
+                request_messages, max_tokens=1100, provider=provider, client=client,
+            )).text
         try:
             validated = validate_story_director_output(snapshot, candidates, extract_json(raw))
             break
@@ -124,10 +117,12 @@ async def request_one(client: httpx.AsyncClient, semaphore: asyncio.Semaphore, n
     }
 
 
-def markdown_report(results: list[dict], model: str) -> str:
+def markdown_report(results: list[dict], provider: str, model: str) -> str:
+    provider_label = {"deepseek": "DeepSeek", "dots": "Dots"}[provider]
     lines = [
-        "# DeepSeek 剧情导演风味样片（本地）", "",
+        f"# {provider_label} 剧情导演风味样片（本地）", "",
         f"- 生成时间：{datetime.now(timezone.utc).astimezone().isoformat(timespec='seconds')}",
+        f"- 供应商：`{provider}`",
         f"- 模型：`{model}`", "- 事件库：`content/story_event_catalog.v1.json`",
         "- 边界：三个场景均为隔离快照；只验证事件选择、桥段和主任务，不写入线上数据库。", "",
         "| 场景 | 决策 | 事件 | 参与者 |", "|---|---|---|---|",
@@ -149,30 +144,35 @@ def markdown_report(results: list[dict], model: str) -> str:
 
 
 async def run(args: argparse.Namespace) -> int:
-    env = {**load_env(Path(args.env_file)), **os.environ}
-    api_key = env.get("DEEPSEEK_API_KEY", "").strip()
-    if not api_key:
-        raise SystemExit("DEEPSEEK_API_KEY 未配置")
-    base_url = env.get("DEEPSEEK_API_BASE", "https://api.deepseek.com")
-    model = env.get("DEEPSEEK_MODEL", "deepseek-v4-flash")
+    try:
+        load_local_llm_env(ROOT, args.env_file)
+    except FileNotFoundError as error:
+        raise SystemExit(str(error)) from error
+    if args.provider:
+        os.environ["LLM_PROVIDER"] = args.provider
+    try:
+        config = provider_config()
+    except RuntimeError as error:
+        raise SystemExit(str(error)) from error
     semaphore = asyncio.Semaphore(2)
     async with httpx.AsyncClient(timeout=90) as client:
         results = await asyncio.gather(*[
-            request_one(client, semaphore, name, setup, snapshot, api_key, base_url, model)
+            request_one(client, semaphore, name, setup, snapshot, config.name)
             for name, setup, snapshot in scenarios()
         ])
-    output = Path(args.output)
+    output = Path(args.output) if args.output else ROOT / "qa" / f"{config.name.upper()}-STORY-DIRECTOR-FLAVOR.md"
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(markdown_report(results, model), encoding="utf-8")
-    output.with_suffix(".json").write_text(json.dumps({"model": model, "results": results}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    output.write_text(markdown_report(results, config.name, config.model), encoding="utf-8")
+    output.with_suffix(".json").write_text(json.dumps({"provider": config.name, "model": config.model, "results": results}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"generated {len(results)} validated story-director scenarios -> {output}")
     return 0
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--env-file", default=str(ROOT / ".env.deepseek.local"))
-    parser.add_argument("--output", default=str(ROOT / "qa" / "DEEPSEEK-STORY-DIRECTOR-FLAVOR.md"))
+    parser.add_argument("--env-file")
+    parser.add_argument("--provider", choices=("deepseek", "dots"))
+    parser.add_argument("--output")
     return parser.parse_args()
 
 

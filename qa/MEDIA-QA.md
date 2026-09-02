@@ -1,5 +1,12 @@
 # 心动之旅 R4 运行时媒体 QA（2026-08-25）
 
+> R9 当前性说明（2026-09-01）：下述 `25/25` 是历史 R4 快照，不再是当前
+> 运行清单的完成口径。本轮严格覆盖复核确认 `23/25`：
+> `D1-A3-cast-introductions` 仍处于身份/音频不完整 hold；
+> `D1-A3B-cast-first-impressions` 的六人 montage 与严格 identityScope/QA
+> evidence 合同不一致。`scripts/validate_event_media_coverage.py` 已在 backend
+> 初始化顺序修复后完整复跑；上述三项失败信息是当前证据。
+
 ## 终验结论
 
 - Canonical 覆盖：9 个 Day 1 主事件 + 16 个 StoryEvent，严格校验 `25/25`。

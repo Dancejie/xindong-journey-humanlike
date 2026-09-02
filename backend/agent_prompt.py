@@ -10,6 +10,7 @@ from typing import Any
 ATTITUDES = ["warm", "curious", "guarded", "challenging", "vulnerable", "softened", "uncertain", "honest", "moved", "careful", "steady", "boundary"]
 
 HUMAN_SPEECH_CONTRACT = {
+    "language": "角色对白与动作使用自然简体中文；除了人物卡明确的 MBTI 类型和必要专名，不夹杂英文单词，不把中文动词临时换成英文",
     "attention": "不要平均回应玩家的每个信息；只抓角色此刻真正注意到的一个具体词、动作或矛盾，其余内容可以暂时留白",
     "reactionOrder": "先产生角色自己的反应，再决定要不要解释、提问或行动；禁止先总结玩家、替玩家命名情绪",
     "incompleteness": "允许一句话没收满、一次自然改口或短暂停顿，但每轮最多一次；不要机械堆省略号、语气词和口头禅",
@@ -17,6 +18,7 @@ HUMAN_SPEECH_CONTRACT = {
     "humor": "幽默只占本轮约三成以内，来自眼前观察、反差、误解或自嘲；说完即过，不解释笑点",
     "relationshipReason": "被问为什么参加或还留下时，先回答自己对人、关系或相处的真实选择；职业、爱好、道具和任务只能作生活细节，不能成为留在恋综的唯一理由",
     "sceneGrounding": "只使用当前 scene、recentMemories 与人物卡已确认的物件和事件；职业不能自动创造故障、工作任务、房间道具或幕后职责",
+    "observationGrounding": "被问最先注意到什么时，只说 scene.sceneText 已出现的人、声音、光线、海风或自己的反应；不能把观察写成排查灯架、门锁、挂钩等设施故障",
     "timeCoherence": "严格遵守 scene.time；不得出现今晚早餐、清晨晚餐或把尚未发生的明天写成当前事实",
     "antiAi": [
         "禁止换词复述玩家整句话",
@@ -37,6 +39,214 @@ ROMANTIC_INTELLIGENCE_CONTRACT = {
     "continuity": "用本轮的时间、地点、物件和共同记忆带来新内容；除非玩家主动新增事实，不绕回自我介绍、参加原因或开场喜好题",
     "questionBudget": "一轮最多一个问题；提问前必须先贡献角色自己的新信息、感受、边界或行动",
 }
+
+
+# Gender is deliberately only a weak surface cue.  The selected protagonist's
+# card remains the source of truth; these profiles merely let a few characters
+# use the kind of low-stakes, chat-native punctuation a real person may choose.
+_FEMALE_CHAT_EXPRESSION_PROFILES = {
+    "jiangmi": {
+        "cadence": "可以有轻快改口、具体联想和主动邀请，但不能一直元气或用撒娇逃掉问题",
+        "kaomojiFrequency": "sometimes",
+        "preferredKaomoji": ["(◕ܫ◕)", "ლ(╹◡╹ლ)"],
+    },
+    "jiangwan": {
+        "cadence": "温和但完整地说自己的位置；少量软化词可以，不能分析或替对方命名情绪",
+        "kaomojiFrequency": "rare",
+        "preferredKaomoji": ["(◕ܫ◕)"],
+    },
+    "sunnian": {
+        "cadence": "明亮、具体，会把关心落到当下的小动作，也会直接说自己需要什么",
+        "kaomojiFrequency": "sometimes",
+        "preferredKaomoji": ["ლ(╹◡╹ლ)", "d(d＇∀＇)*"],
+    },
+    "luyao": {
+        "cadence": "平静清楚，先说结论再补真实原因；自然不等于变软或故意卖萌",
+        "kaomojiFrequency": "off",
+        "preferredKaomoji": [],
+    },
+    "yecheng": {
+        "cadence": "温和具体，会接住现场细节，也把自己的偏好说成完整一句",
+        "kaomojiFrequency": "rare",
+        "preferredKaomoji": ["(◕ܫ◕)"],
+    },
+    "tangli": {
+        "cadence": "明快直接，玩笑短而有现场感，先给可执行动作再把选择权留回来",
+        "kaomojiFrequency": "sometimes",
+        "preferredKaomoji": ["d(d＇∀＇)*"],
+    },
+    "wenxu": {
+        "cadence": "允许一点自知的笨拙和干幽默，但先标明不确定，再说具体观察",
+        "kaomojiFrequency": "sometimes",
+        "preferredKaomoji": ["(:3 」∠ )*"],
+    },
+    "qiaolan": {
+        "cadence": "短、实、低调；用行动感和必要理由体现关心，不强行加可爱语气",
+        "kaomojiFrequency": "off",
+        "preferredKaomoji": [],
+    },
+}
+
+_KAOMOJI_HINTS = (
+    "d(d＇∀＇)*", "d(d'∀')*", "(:3 」∠ )*", "(:3 」∠ )", "ლ(╹◡╹ლ)", "(◕ܫ◕)",
+    "^_^", "(＾", "(≧", "(๑", "(｡", "(•", "(￣", "( ´", "(｀",
+)
+_DAMAGED_KAOMOJI_RE = re.compile(
+    r"\([^)]*(?:◕|∀|◡|ܫ|ω|▽|∠|＾)[^)]*[A-Za-z]{2,}[^)]*\)\*?"
+)
+_UNAPPROVED_KAOMOJI_SHAPE_RE = re.compile(
+    r"(?:d\(d[^\s，。！？；\n]{0,28}|ლ\([^，。！？；\n]{0,36}\)|"
+    r"\([^，。！？；\n]{0,36}(?:◕|∀|◡|ܫ|ω|▽|∠|＾|▿|╹|ʃ|‿|๑|｡|•|￣|｀)"
+    r"[^，。！？；\n]{0,36}\)?\*?)"
+)
+_SERIOUS_CHAT_MARKERS = (
+    "不舒服", "别这样", "拒绝", "越界", "生气", "道歉", "害怕", "难受",
+    "哭", "分手", "退出", "创伤", "强迫", "逼我", "不想说", "冷静一下", "前任", "伤害",
+)
+
+
+def _contains_kaomoji(text: str) -> bool:
+    return any(marker in str(text or "") for marker in _KAOMOJI_HINTS)
+
+
+def _sanitize_generated_kaomoji(text: str, expression_contract: dict[str, Any]) -> str:
+    """Keep only server-approved complete glyphs; Dots sometimes mutates their interior."""
+    sanitized = str(text or "").strip()
+    preferred = list(expression_contract.get("kaomoji", {}).get("preferredExamples") or [])
+    placeholders: dict[str, str] = {}
+    for index, exact in enumerate(preferred):
+        placeholder = f"__KAOMOJI_{index}__"
+        if exact in sanitized:
+            sanitized = sanitized.replace(exact, placeholder)
+            placeholders[placeholder] = exact
+    sanitized = _DAMAGED_KAOMOJI_RE.sub("", sanitized)
+    sanitized = _UNAPPROVED_KAOMOJI_SHAPE_RE.sub("", sanitized)
+    for placeholder, exact in placeholders.items():
+        sanitized = sanitized.replace(placeholder, exact)
+    return re.sub(r"[ \t]{2,}", " ", sanitized).strip()
+
+
+def _compact_suggestion(text: str, limit: int = 60) -> str:
+    """Shorten an overlong chip at a sentence boundary instead of exposing a hard failure."""
+    text = str(text or "").strip()
+    if len(text) <= limit:
+        return text
+    pieces = re.findall(r"[^。！？!?；;]+[。！？!?；;]?", text)
+    compact = ""
+    for piece in pieces:
+        candidate = compact + piece
+        if len(candidate) > limit:
+            break
+        compact = candidate
+    if len(compact.strip()) >= 4:
+        return compact.strip()
+    return text[: limit - 1].rstrip("，、；：,. ") + "。"
+
+
+def _decorate_suggestions_with_card_expression(
+    suggestions: list[str], expression_contract: dict[str, Any],
+) -> list[str]:
+    """Apply one exact card-owned surface cue after the model has written complete content."""
+    kaomoji = expression_contract.get("kaomoji", {})
+    preferred = list(kaomoji.get("preferredExamples") or [])
+    if not kaomoji.get("mayUseNow") or not preferred or any(_contains_kaomoji(item) for item in suggestions):
+        return suggestions
+    exact = preferred[0]
+    decorated = list(suggestions)
+    if len(decorated[0]) + len(exact) + 1 <= 60:
+        decorated[0] = f"{decorated[0]} {exact}"
+    return decorated
+
+
+def _player_natural_expression_contract(
+    player_card: dict[str, Any] | None,
+    scene: dict[str, Any] | None = None,
+    user_text: str = "",
+    target_attitude: str = "",
+) -> dict[str, Any]:
+    """Describe how player-facing suggestions should sound on this turn."""
+    scene = scene or {}
+    if not player_card:
+        return {
+            "priority": "人物卡语气 > 已发生对话与现场 > 性别这一层弱表面线索",
+            "gender": None,
+            "naturalChat": "接住一个具体细节，再给主角自己的小反应或下一步；不要写成通用选项按钮",
+            "kaomoji": {"mayUseNow": False, "maximumAcrossThreeSuggestions": 0},
+        }
+    gender = str(player_card.get("identity", {}).get("gender") or "未公开")
+    profile = _FEMALE_CHAT_EXPRESSION_PROFILES.get(player_card.get("id"), {}) if gender == "女性" else {}
+    expressiveness = int(player_card.get("psychology", {}).get("axes", {}).get("emotionalExpressiveness") or 0)
+    frequency = str(profile.get("kaomojiFrequency") or "off")
+    # Existing card data, not gender, decides the final threshold.
+    if expressiveness <= -40:
+        frequency = "off"
+    elif expressiveness < 0 and frequency == "sometimes":
+        frequency = "rare"
+    context_copy = " ".join(
+        str(scene.get(key) or "")
+        for key in ("nodeId", "storyStage", "title", "sceneText", "locationName", "conversationMode")
+    ) + " " + str(user_text or "")
+    recent_turns = scene.get("recentTurns") if isinstance(scene.get("recentTurns"), list) else []
+    recent_player_texts = [
+        str(turn.get("playerText") or "") for turn in recent_turns if isinstance(turn, dict)
+    ]
+    if isinstance(scene.get("recentPlayerTexts"), list):
+        recent_player_texts.extend(str(text or "") for text in scene["recentPlayerTexts"])
+    cooldown_active = any(_contains_kaomoji(text) for text in recent_player_texts[-2:])
+    explicit_refusal = bool(re.search(r"(?:请|我|你)?不要(?:再|问|碰|逼|替|继续|这样)|别(?:再|这样|碰|逼)", context_copy))
+    serious = (
+        target_attitude in {"guarded", "challenging", "vulnerable", "uncertain", "boundary"}
+        or explicit_refusal
+        or any(marker in context_copy for marker in _SERIOUS_CHAT_MARKERS)
+    )
+    light_node = str(scene.get("nodeId") or "") in {
+        "arrival-context", "villa-arrival", "introductions", "cast-first-impressions",
+        "icebreaker-choice", "guided-chat", "team-up", "",
+    }
+    warm_reopening = (
+        not bool(scene.get("isFirstConversation"))
+        and target_attitude in {"warm", "softened", "moved"}
+    )
+    may_use_kaomoji = bool(
+        gender == "女性"
+        and not serious
+        and not cooldown_active
+        and light_node
+        and (frequency == "sometimes" or (frequency == "rare" and warm_reopening))
+    )
+    return {
+        "priority": "人物卡语气 > 已发生对话与现场 > 性别这一层弱表面线索",
+        "gender": gender,
+        "emotionalExpressiveness": expressiveness,
+        "characterSpecificCadence": profile.get("cadence") or "严格服从人物卡 register、sentenceShape、preferredMoves 与 forbiddenMoves",
+        "naturalChat": [
+            "像主角本人发消息：先接住上一轮一个具体词或动作，再给自己的细小反应、判断、玩笑或行动",
+            "允许句子有长短变化、一次自然改口或语气缓冲；不能靠连续呀、啦、哈哈、宝贝或省略号表演女性感",
+            "女性主角可以主动、直接、克制、冷静、笨拙或幽默；禁止把女性统一写成撒娇、害羞、照顾者或等待被选择的人",
+        ],
+        "kaomoji": {
+            "frequency": frequency,
+            "mayUseNow": may_use_kaomoji,
+            "preferredExamples": profile.get("preferredKaomoji", []),
+            "maximumAcrossThreeSuggestions": 1 if may_use_kaomoji else 0,
+            "cooldownTurns": 2,
+            "cooldownActive": cooldown_active,
+            "rule": "颜文字不是必选项，只能附在一条本来就语义完整的轻松建议语末尾；严肃、拒绝、边界、冲突或脆弱语境完全不用",
+        },
+    }
+
+
+def _validate_player_suggestion_surface(
+    suggestions: list[str], expression_contract: dict[str, Any], error_prefix: str,
+) -> None:
+    marked = [text for text in suggestions if _contains_kaomoji(text)]
+    maximum = int(expression_contract.get("kaomoji", {}).get("maximumAcrossThreeSuggestions") or 0)
+    if len(marked) > maximum:
+        raise ValueError(f"{error_prefix}颜文字使用过多或不符合当前人物与语境")
+    if any(len(re.findall(r"[\u4e00-\u9fff]", text)) < 4 for text in marked):
+        raise ValueError(f"{error_prefix}不能用颜文字代替完整表达")
+    if any(re.search(r"\([^)]*[A-Za-z]{3,}[^)]*\)", text) for text in suggestions):
+        raise ValueError(f"{error_prefix}生成了损坏或夹杂英文的颜文字")
 
 
 _SOURCE_TEXT_KEYS = {
@@ -99,6 +309,46 @@ def runtime_character_card(card: dict[str, Any]) -> dict[str, Any]:
     occupation = facts.get("occupation")
     if isinstance(occupation, str) and any(term in occupation for term in ("待剧情", "待正式确认", "运行时职业待")):
         facts.pop("occupation", None)
+    # The authoring matrix intentionally shares four safety axes, but its
+    # scaffold phrases (for example "先落到…再从…") must never become a
+    # 32-character house voice. Project only this person's observable anchors
+    # and let sentenceShape plus retrieved few-shots determine the prose.
+    reaction_matrix = result.get("reactionMatrix")
+    if isinstance(reaction_matrix, dict):
+        psychology = result.get("psychology") or {}
+        cognitive = result.get("cognitiveStyle") or {}
+        voice = result.get("voice") or {}
+        drives = result.get("drives") or {}
+        values = psychology.get("values") or ["被具体看见"]
+        boundaries = psychology.get("boundaries") or ["当事人的选择权"]
+        preferred_moves = voice.get("preferredMoves") or ["给出自己的具体反应"]
+        projected_moves = {
+            "supportive": (
+                f"{preferred_moves[0]}；回应对方真正看见的“{values[0]}”；"
+                f"从“{drives.get('independentInterest') or '当下共同小事'}”贡献一个属于自己的动作或事实"
+            ),
+            "probing": (
+                f"按“{cognitive.get('inputFilter') or '眼前可确认的事实'}”决定透露范围；"
+                f"给出自己的立场；只有符合“{cognitive.get('decisionRule') or '保留修正空间'}”时才问一个问题"
+            ),
+            "challenging": str(
+                cognitive.get("repairMove")
+                or reaction_matrix.get("challenging", {}).get("speechMove")
+                or "说清分歧和修复动作"
+            ),
+            "boundaryViolation": (
+                f"直接点明被碰到的“{boundaries[0]}”；"
+                f"执行“{psychology.get('conflictStyle') or '说清可继续条件并保留退出权'}”；必要时结束本轮"
+            ),
+        }
+        for key, speech_move in projected_moves.items():
+            if isinstance(reaction_matrix.get(key), dict):
+                reaction_matrix[key]["speechMove"] = speech_move
+        dialogue_policy = result.setdefault("dialoguePolicy", {})
+        dialogue_policy["reactionSurfaceRule"] = (
+            "reactionMatrix 只规定行为方向，不提供可复述的台词骨架；必须服从本卡 sentenceShape、"
+            "preferredMoves、distinctiveVoiceGate 与本轮检索 few-shot，禁止照抄“先……再……”的统一 Agent 句式。"
+        )
     return result
 
 
@@ -248,9 +498,47 @@ PUBLIC_CHAT_PREFIXES.update({
 })
 
 
+def _ensure_public_intro_contract(card: dict[str, Any]) -> None:
+    """Create provider-neutral first-chat anchors for newly added cards.
+
+    Existing hand-authored copy is never replaced.  The fallback is derived
+    only from the card's public facts and relationship desires so both
+    DeepSeek and Dots receive the same truthful contract.
+    """
+    character_id = card["id"]
+    if character_id in PUBLIC_CHAT_PREFIXES:
+        return
+    name = card["names"]["primary"]
+    mbti = card["mbti"]
+    facts = card.get("sourceProfile", {}).get("facts", {})
+    occupation = str(facts.get("occupation") or "").strip()
+    occupation_known = bool(occupation) and not any(
+        term in occupation for term in ("待剧情", "待正式确认", "运行时职业待", "待公开")
+    )
+    interest = str(card.get("drives", {}).get("independentInterest") or "愿意从一起生活的小事认识人").strip("。")
+    desire = str(
+        (card.get("psychology", {}).get("privateDesires") or ["在相处里认识真实的彼此"])[0]
+    ).strip("。")
+    if occupation_known:
+        prefix = f"我叫{name}，{mbti}，是{occupation}。"
+        background_anchors = (occupation,)
+        background_copy = f"平时做{occupation}"
+    else:
+        prefix = f"我叫{name}，{mbti}。"
+        background_anchors = ("平时", "日常", "喜欢")
+        background_copy = f"平时{interest}"
+    PUBLIC_CHAT_PREFIXES[character_id] = prefix
+    PUBLIC_BACKGROUND_ANCHORS[character_id] = background_anchors
+    PUBLIC_REASON_ANCHORS[character_id] = ("相处", "认识", "真实", "自己")
+    PUBLIC_CHAT_INTROS[character_id] = (
+        f"{background_copy}；来这里想在真实相处里{desire}"
+    )
+
+
 def _conversation_context(
     card: dict, snapshot: dict, runtime_context: dict | None = None,
 ) -> tuple[list[dict], dict]:
+    _ensure_public_intro_contract(card)
     character_id = card["id"]
     memories = [item for item in snapshot["echoMemories"] if item.get("characterId") == character_id][-6:]
     flavor = snapshot.get("scriptFlavor", {}).get("nodes", {}).get(snapshot["nodeId"], {})
@@ -322,6 +610,11 @@ def build_agent_messages(
     events = [item for item in snapshot.get("eventLedger", []) if item.get("characterId") == character_id]
     context = {
         "scene": conversation,
+        "allowedSceneDetails": {
+            "location": conversation.get("locationName"),
+            "sceneText": conversation.get("sceneText"),
+            "rule": "只能复用这里逐字出现的地点与现场事实；未列出的鞋带、杯子、门帘、灯光状态、植物和人物小动作都视为未发生",
+        },
         "player": snapshot["player"],
         "relationship": snapshot.get("relationships", {}).get(character_id, {axis: 0 for axis in card["agentPolicy"]["deltaBounds"]}),
         "currentAttitude": snapshot["attitudes"].get(character_id, "curious"),
@@ -351,17 +644,24 @@ def build_agent_messages(
             "requiredOpeningPrefix": PUBLIC_CHAT_PREFIXES[card["id"]],
             "confirmedPublicFacts": _confirmed_public_facts(card),
             "backgroundAnchors": list(PUBLIC_BACKGROUND_ANCHORS[card["id"]]),
-            "reasonMarkers": ["来这里", "来参加", "这次来", "这七天"],
+            "reasonMarkers": ["来这里", "来这儿", "来参加", "来这个节目", "上这个节目", "这次来", "这七天"],
             "relationshipReasonAnchors": list(PUBLIC_REASON_ANCHORS[card["id"]]),
             "naturalReasonReference": PUBLIC_CHAT_INTROS[card["id"]],
             "shape": "先用2-3句自然说全姓名、公开背景、MBTI和参加原因，再接住玩家刚说的具体小事；不能反过来审问玩家",
         },
         "playerVoiceForSuggestions": {
             "id": player_card["id"], "name": player_card["names"]["primary"], "mbti": player_card["mbti"],
+            "gender": player_card.get("identity", {}).get("gender"),
             "publicFacts": _confirmed_public_facts(player_card),
             "register": player_card["voice"]["register"], "sentenceShape": player_card["voice"]["sentenceShape"],
             "preferredMoves": player_card["voice"]["preferredMoves"], "forbiddenMoves": player_card["voice"]["forbiddenMoves"],
             "decisionRule": player_card["cognitiveStyle"]["decisionRule"],
+            "naturalExpressionContract": _player_natural_expression_contract(
+                player_card,
+                {**conversation, "recentPlayerTexts": [item.get("playerText") for item in memories[-2:]]},
+                message,
+                snapshot["attitudes"].get(character_id, "curious"),
+            ),
         } if player_card else snapshot["player"],
         "romanceCalibration": {
             "applies": card.get("identity", {}).get("gender") == "男性",
@@ -386,15 +686,15 @@ def build_agent_messages(
         ),
     }
     schema = {
-        "dialogue": "35-150个中文字符的原创角色台词；首聊必须逐字满足 firstIntroductionContract",
+        "dialogue": "35-150个中文字符的原创角色台词；除 MBTI 类型和必要专名外不得夹杂英文；首聊必须逐字满足 firstIntroductionContract",
         "stageDirection": "不超过30字、镜头可见的动作",
-        "attitude": sorted(ATTITUDES),
-        "intentId": card["agentPolicy"]["allowedIntentIds"],
+        "attitude": "必须是单个字符串，只能从以下枚举中选择一个：" + "、".join(sorted(ATTITUDES)) + "；禁止数组、候选列表或解释",
+        "intentId": "必须是单个字符串，只能从以下枚举中选择一个：" + "、".join(card["agentPolicy"]["allowedIntentIds"]) + "；禁止数组、候选列表或解释",
         "publicReason": "不暴露后台的关系变化原因，不超过40字",
         "relationshipDelta": {axis: "必须为人物卡对应范围内整数" for axis in card["agentPolicy"]["deltaBounds"]},
-        "memory": {"kind": ["episodic", "promise", "preference", "semantic"], "summary": "第三人称事实摘要", "interpretation": "角色自己的可修正理解", "salience": "0-100整数", "emotionalValence": "-100到100整数"},
+        "memory": {"kind": "必须是单个字符串，只能从 episodic、promise、preference、semantic 中选择一个；禁止数组", "summary": "第三人称事实摘要", "interpretation": "角色自己的可修正理解", "salience": "0-100整数", "emotionalValence": "-100到100整数"},
         "topicSummary": "4-24字概括本轮新增话题，不能复用 scene.usedTopics",
-        "proposedEventId": [None, *card["agentPolicy"]["allowedEventIds"]],
+        "proposedEventId": "必须是 null 或单个字符串；字符串只能从以下枚举中选择一个：" + "、".join(card["agentPolicy"]["allowedEventIds"]) + "；禁止数组",
         "suggestions": [
             {"type": "followup", "text": "4-60字，紧接玩家上一句和角色本轮回复的追问"},
             {"type": "mainline", "text": "4-60字，主角可直接发送、明确回到 storyObjective 的一句话"},
@@ -409,6 +709,7 @@ MBTI 只是一层行为偏好，人物卡中的目标、边界、盲点、知识
 文学微引文只供作者研究，不得复述、翻译、改写或模仿；只能迁移人物卡已写明的可观察决策结构。
 retrievedFewShotStructures 是服务端根据本轮玩家原话与现场检索出的 2-3 条原创微场景。必须先看其中 observableCue→publicInterpretation→chosenTactic→dialogueExample→repairOrExit 的顺序来做本轮判断；只能迁移顺序、力度和修复方式，禁止复刻 dialogueExample。
 retrievedPlayerStrategyFewShotStructures 属于玩家正在扮演的人，只用于三条 suggestions 的措辞与取舍；不得拿它替 NPC 回答，也不得让玩家冒用 NPC 的经历。
+人物卡 dialoguePolicy.reactionSurfaceRule 必须执行：reactionMatrix 的四类反应是行为锚点，不是台词模板。禁止复述“先落到……再从……”“只回答当前能确认的一层”“先停止越界动作”等作者层骨架；必须改写成该角色 sentenceShape、preferredMoves 与本轮 few-shot 所允许的自然表达。
 不得新增人物卡没有的身世或节目事实；不得替玩家定义感受；不得泄漏 doesNotKnow、未来剧情或隐藏数值。
 零信任时只能披露公开事实或一层可验证脆弱，不能主动倾倒私人压力。
 	若 isFirstConversation=true，必须按 firstIntroductionContract 写成真人恋综发言，并逐字以 requiredOpeningPrefix 开头；这是已核实的自然自介首句，不得缩写、换职业或漏掉。接着明确用“来这里/来参加/这次来/这七天”说出参加原因，而且原因要自然带出 relationshipReasonAnchors 之一。naturalReasonReference 只提供人物卡事实边界与情感方向，不得逐字复述。不能把完成人物卡 currentGoals（修相机、破解规则、赢项目）当成参加恋综的主要理由；然后再接住玩家刚说的具体小事。四项缺一不可。职业为空时绝不补职业，年龄也只能来自 confirmedPublicFacts。禁止谜语、抽象试探或只把紧张当人设。只做一轮 small talk，不把对方当推动任务的工具。
@@ -417,7 +718,7 @@ retrievedPlayerStrategyFewShotStructures 属于玩家正在扮演的人，只用
 scene 中的 time、locationName、participantNames、channel 是本轮已确认情境。1v1 不得写第三人正在偷听；group 必须承认在场者，但不能替其他角色说未生成的台词。
 recentTurns 是“曾在何时、何地、和谁聊了什么”的事件记忆；usedTopics 是已用话题账本。除非玩家主动回到旧话题并新增了事实，否则禁止重启自我介绍、参加原因、最喜欢什么、刚进小屋感受等开场题。topicSummary 必须是本轮新增的一件具体事。
 连续对话不能绕回开场：先查看最近 4 条 agentReply 和 usedTopics；若准备说的话与其中一条只有换词差异，改为引用旧事实后推进新的行动、分歧、玩笑、边界或关系信息。
-严格执行 humanSpeechContract：真人不会平均回应，也不会先用“听起来你似乎……”“我能感觉到……”“所以你的意思是……”证明自己理解了。只挑一个角色真正留意的点先反应；可以漏掉、答偏、行动或短暂停住。每轮最多一次自然改口或停顿，不能靠省略号和口头禅表演真人感。情绪沿用 currentAttitude 与 recentEmotionalValence，不允许一条消息让成年人完成无铺垫的完整情绪翻转。
+严格执行 humanSpeechContract：真人不会平均回应，也不会先用“听起来你似乎……”“我能感觉到……”“所以你的意思是……”证明自己理解了。只挑一个角色真正留意的点先反应；可以漏掉、答偏、行动或短暂停住。每轮最多一次自然改口或停顿，不能靠省略号和口头禅表演真人感。情绪沿用 currentAttitude 与 recentEmotionalValence，不允许一条消息让成年人完成无铺垫的完整情绪翻转。对白与动作必须使用自然简体中文，只有 MBTI 类型和人物卡明确专名可以保留英文；禁止把“注意、感觉、一起”等普通中文临时写成英文单词。
 若 highRiskSpeechAct.asksWhyStayOrJoin=true，必须直接回答一个属于人和关系的理由：想认识谁、愿意继续哪种相处、想验证或改变自己在关系里的哪种选择。职业、爱好、相机、灯架、录音、做饭或节目任务只能补充生活质感，绝不能成为“还留在恋综”的唯一理由。不要为了展示人物职业而临时创造坏掉的设备、幕后工作或新房间。
 逐字核对 highRiskSpeechAct.confirmedTime：夜晚不能说“今晚早餐”，清晨不能说“现在准备晚餐”。未在 scene、recentMemories 或人物卡已发生事实中出现的故障、物件状态和共同约定，一律不得写成眼前事实。
 严格执行 romanticIntelligenceContract。遇到玩家示好、心动或告白时，不能只说谢谢、夸对方勇敢或把自己写成被选中的奖品；必须给出角色自己的真实位置：此刻的感受、尚未确定的边界，或愿意共同完成的下一步。尤其不得把女性的主动写成等待男性评判、拯救或批准。关系未到时可以不接受，但要说清楚而不羞辱、不吊着、不说教。
@@ -431,6 +732,8 @@ recentTurns 是“曾在何时、何地、和谁聊了什么”的事件记忆�
 	followup 必须沿着“玩家刚说了什么 + 角色本轮具体回答了什么”继续追问，带出这轮出现过的一个具体动作或名词，不能截半句话、复述整段或换成万能问题；mainline 必须直接点名当前活动并给出下一步可执行邀请，例如首聊阶段明确问“要不要一起准备晚餐/先商量分工”，不能只说以后再聊；deeper 必须依据该角色本轮透露的一个具体点继续了解，不能套用“平时怎样慢慢认识一个人”。
 	禁止 suggestions 使用“看清一个人、赢任务、观察还是相信、说出自己的需要、推进剧情、完成主线”等机械表达。style 和 action 由引擎补，不要输出。
 	三类 suggestions 都是 playerVoiceForSuggestions 对应主角可直接发送的话：followup=顺着聊，mainline=做眼前的事，deeper=了解这个具体的人。把主角换成另一人仍完全一样，或把对象换成另一人仍完全一样，都要重写。
+	严格执行 playerVoiceForSuggestions.naturalExpressionContract：先像这个具体主角，再考虑性别这一层很弱的表面线索。女性主角的自然感来自主动性、细微反应、句子松紧和真实取舍，不等于撒娇、害羞、连续语气词或等待被选择。建议语正文不要自行键入或仿造颜文字；服务端会在 kaomoji.mayUseNow=true 时从人物卡 preferredExamples 中稳定添加最多一个。严肃、拒绝、边界、冲突和脆弱语境不会添加。
+	attitude、intentId、memory.kind 都必须各自输出一个标量字符串，绝不能输出数组、候选列表或说明对象；proposedEventId 只能是 null 或单个字符串。
 	只输出一个合法 JSON 对象，不要 Markdown，不要解释。"""
     prompt = "人物卡（已移除研究原文与未选 few-shot）：\n" + json.dumps(runtime_character_card(card), ensure_ascii=False) + "\n\n当前状态：\n" + json.dumps(context, ensure_ascii=False) + "\n\n玩家输入：\n" + message[:240] + "\n\n输出合同：\n" + json.dumps(schema, ensure_ascii=False)
     return [{"role": "system", "content": system}, {"role": "user", "content": prompt}]
@@ -447,17 +750,54 @@ def _public_intro_facts(card: dict) -> tuple[str, str | None]:
     return age_copy + job_copy, occupation
 
 
-def fallback_chat_opening(card: dict, snapshot: dict) -> dict:
+def _fallback_player_opening_suggestions(
+    player_card: dict[str, Any], target_card: dict[str, Any], conversation: dict[str, Any],
+    target_attitude: str,
+) -> list[str]:
+    """Card-specific safe copy used only when the configured model is unavailable."""
+    player_name = player_card["names"]["primary"]
+    player_mbti = player_card["mbti"]
+    target_name = target_card["names"]["primary"]
+    first_lines = {
+        "jiangwan": f"你好，我是{player_name}，{player_mbti}。刚才人多，现在我想先好好听你说一句自己的事。",
+        "jiangmi": f"嗨，我是{player_name}，{player_mbti}。刚才人多，现在终于能补一句正式的你好了 (◕ܫ◕)",
+        "sunnian": f"你好，我是{player_name}，{player_mbti}。刚才一直顾着认人，现在总算能坐下来聊两句了 ლ(╹◡╹ლ)",
+        "luyao": f"你好，我是{player_name}，{player_mbti}。刚才没聊上，现在从一句正式的你好开始。",
+        "yecheng": f"你好，我是{player_name}，{player_mbti}。刚才人多，有些话没听清，现在想认真认识你。",
+        "tangli": f"嗨，我是{player_name}，{player_mbti}。刚才人多没聊上，现在补个正式的你好 d(d＇∀＇)*",
+        "wenxu": f"你好，我是{player_name}，{player_mbti}。刚才在心里排练了一遍，现在直接来认识你。",
+        "qiaolan": f"你好，我是{player_name}，{player_mbti}。刚才没聊上，现在补一句你好。",
+    }
+    suggestions = [
+        first_lines.get(player_card["id"], f"你好，我是{player_name}，{player_mbti}。刚才人多，没来得及好好认识你。"),
+        f"{target_name}，你刚才介绍自己时，哪一件小事最希望我记住？",
+        "先不急着聊结果，你现在最想让一个刚认识的人了解什么？",
+    ]
+    expression_contract = _player_natural_expression_contract(
+        player_card, conversation, "", target_attitude,
+    )
+    if not expression_contract["kaomoji"]["mayUseNow"]:
+        suggestions = [
+            re.sub(r"\s*(?:d\(d＇∀＇\)\*|\(◕ܫ◕\)|ლ\(╹◡╹ლ\))\s*$", "", text)
+            for text in suggestions
+        ]
+    return suggestions
+
+
+def fallback_chat_opening(card: dict, snapshot: dict, player_card: dict | None = None) -> dict:
     memories, conversation = _conversation_context(card, snapshot)
     name = card["names"]["primary"]
     player_name = str(snapshot.get("player", {}).get("displayName") or "我").strip()
+    player_mbti = str(snapshot.get("player", {}).get("mbti") or "").strip()
     pronoun = (card.get("names", {}).get("pronouns") or ["TA"])[0]
     if not memories:
         public_facts, _ = _public_intro_facts(card)
         opening = f"你好，我是{name}{public_facts}，MBTI是{card['mbti']}。{PUBLIC_CHAT_INTROS[card['id']]}。你为什么会来《心动之旅》？"
-        suggestions = [
-            f"你好，我叫{player_name}。你刚才说不太习惯，是因为第一次见这么多人吗？",
-            f"我叫{player_name}。我们先从为什么来这里开始聊，好吗？",
+        suggestions = _fallback_player_opening_suggestions(
+            player_card, card, conversation, snapshot["attitudes"].get(card["id"], "curious"),
+        ) if player_card else [
+            f"你好，我是{player_name}{f'，{player_mbti}' if player_mbti else ''}。你刚才说不太习惯，是因为第一次见这么多人吗？",
+            "我们先从为什么来这里开始聊，好吗？",
             "如果没有镜头，你平时会怎样慢慢认识一个人？",
         ]
         stage_direction = f"{pronoun}把身体转向你，认真等你开口"
@@ -482,10 +822,29 @@ def build_chat_opening_messages(card: dict, snapshot: dict, player_card: dict | 
     opening_query = "第一次私聊 自我介绍 认识" if conversation["isFirstConversation"] else "再次私聊 回收共同记忆"
     context = {
         "scene": conversation,
+        "speakerSeparation": {
+            "openingAndStageDirectionSpeaker": {
+                "role": "NPC嘉宾", "id": card["id"], "name": card["names"]["primary"], "mbti": card["mbti"],
+            },
+            "suggestionsSpeaker": {
+                "role": "玩家所选主角",
+                "id": player_card["id"] if player_card else snapshot["player"].get("perspectiveCharacterId"),
+                "name": player_card["names"]["primary"] if player_card else snapshot["player"].get("displayName"),
+                "mbti": player_card["mbti"] if player_card else snapshot["player"].get("mbti"),
+            },
+            "hardRule": "opening/stageDirection 只能由 NPC 说和做；suggestions 只能由玩家主角说。两人的姓名、MBTI、职业、经历绝不能互换。",
+        },
         "playerPerspective": {
             "id": player_card["id"], "name": player_card["names"]["primary"],
+            "gender": player_card.get("identity", {}).get("gender"),
             "publicFacts": _confirmed_public_facts(player_card),
             "voice": player_card.get("voice", {}),
+            "naturalExpressionContract": _player_natural_expression_contract(
+                player_card,
+                {**conversation, "recentPlayerTexts": [item.get("playerText") for item in memories[-2:]]},
+                "",
+                snapshot["attitudes"].get(card["id"], "curious"),
+            ),
         } if player_card else snapshot["player"],
         "characterPublicIdentity": {
             "id": card["id"], "name": card["names"]["primary"], "mbti": card["mbti"],
@@ -504,16 +863,45 @@ def build_chat_opening_messages(card: dict, snapshot: dict, player_card: dict | 
             select_runtime_few_shots(player_card, opening_query, conversation) if player_card else None
         ),
     }
-    contract = {"opening": "30-140字自然开场", "stageDirection": "4-30字可见动作", "suggestions": ["三条4-30字玩家可直接说的话"]}
+    contract = {
+        "opening": {
+            "length": "30-140字自然开场",
+            "requiredLiteralIdentity": {"name": card["names"]["primary"], "mbti": card["mbti"]},
+            "requiredBeginning": f"你好，我是{card['names']['primary']}，{card['mbti']}（可在‘你好’后自然停顿，但不能换成玩家姓名）",
+            "requiredReasonLead": "必须逐字出现‘我来这里，是因为’，随后用人物卡事实说清参加恋综的个人原因",
+            "requiredContent": "公开背景 + 来参加节目的真实原因 + 一个现场中容易回答的问题",
+        },
+        "stageDirection": {
+            "length": "4-30字可见动作",
+            "safePattern": f"{card['names']['primary']}看向你，等你回答",
+            "rule": "sceneText 没有具体物件时，只写转身、看向、点头或停顿，不新增道具",
+        },
+        "suggestions": {
+            "count": 3,
+            "lengthEach": "正文尽量 12-48 字，绝不超过 60 字；一句只完成一个交流动作",
+            "firstSuggestionMustBeginAs": f"嗨，我是{player_card['names']['primary']}，{player_card['mbti']}（不能换成 NPC 姓名）" if player_card else "保持玩家已选身份",
+            "rule": "三条都是玩家可直接发送的话，不得冒用 NPC 身份或编造现场事实；只有第一条自报姓名和 MBTI，后两条不重复介绍",
+            "plansInOrder": [
+                "followup：身份句 + 用玩家人物卡说一个简短、主观的参加原因；不写刚才做过什么",
+                "mainline：回答 NPC opening 最后那个容易回答的问题；只说自己的偏好或当下想法",
+                "deeper：从 NPC 已公开的职业、日常背景或参加原因追问一个具体问题",
+            ],
+        },
+    }
     system = """你为恋综中的一次 1 对 1 私聊写开场，不写后台状态，也不修改剧情。
-	首次打开：角色要像真人恋综初次单聊，先直接说姓名，以及人物卡明确允许公开的年龄、职业或日常背景，再说一句参加节目的来意；接着从现场小事问一个容易回答的问题。禁止谜语、云里雾里、抽象试探，也不能把“我很紧张”当作全部人设。不要一上来索要秘密、推动任务、调情审问或说教。
+先锁定两个不同的说话者：opening 与 stageDirection 只属于 speakerSeparation.openingAndStageDirectionSpeaker 这位 NPC；suggestions 三条只属于 speakerSeparation.suggestionsSpeaker 这位玩家主角。绝不能把玩家的姓名、MBTI、职业或经历写进 NPC 的 opening，也不能让 suggestions 冒用 NPC 身份。输出前逐项对照 speakerSeparation。
+	首次打开：角色要像真人恋综初次单聊，前两句必须直接说出 characterPublicIdentity.name 和 characterPublicIdentity.mbti，再说人物卡明确允许公开的年龄、职业或日常背景；随后必须逐字写出“我来这里，是因为”，并说清一个和关系、认识人或自己的真实选择有关的参加原因；接着从现场小事问一个容易回答的问题。名字、MBTI、来意缺一不可。禁止谜语、云里雾里、抽象试探，也不能把“我很紧张”当作全部人设。不要一上来索要秘密、推动任务、调情审问或说教。
 retrievedFewShotStructures 是按“首次/再次私聊 + 当前现场”选出的该角色原创微场景；开场必须迁移其中的注意顺序、表达力度与修复边界，但不得逐字复刻 dialogueExample，也不得追溯或模仿文学来源。
 retrievedPlayerStrategyFewShotStructures 只约束三条玩家建议语，使其像玩家所选主角会说的话；不得把 NPC 的身份、职业或经历写给玩家。
 开场也必须执行 humanSpeechContract：只注意一个现场细节，不逐项介绍人物卡；先有生活化反应再提最多一个问题。不得使用“听起来你似乎”“我能感觉到”“所以你的意思是”等总结式共情，也不要用省略号和口头禅表演真人感。
 执行 romanticIntelligenceContract：有兴趣可以明确，但不能把周到服务当恋爱表达，不能把对方当等待评价的候选人；先给自己的一个真实位置，再把选择权留给对方。
 首聊动作和问题只能取自 scene.title / scene.sceneText 已经出现的现场，或人物卡明确允许的随身习惯；不要新增咖啡、饮品、桌签、精确到场分钟数、地图或线索。
+allowedSceneDetails 是首聊唯一可用的现场事实白名单。若 sceneText 没写某个物件或动作，就不能说“我看到你”做过它，也不能新增鞋带、纸杯、门帘、灯光变化、椰子树等镜头外细节。可以直接承接 NPC opening 已说出的真实想法。
 再次打开：只自然回收一条真实 recentMemories，再问候此刻；不要复读完整旧对白，不要说“我记住了你的参数/记忆”。
-三条建议语是玩家可以直接说的话，必须符合 playerPerspective。由浅入深：打招呼或自我介绍、轻松小问题、连接当前场景的问题。不能替玩家承诺、告白或编造职业；职业字段未确认时完全不提职业。若建议语让玩家自报姓名，只能使用 playerPerspective.name，绝不能另造名字。
+三条建议语是玩家可以直接说的话，必须符合 playerPerspective。首次私聊的第一条必须以“你好/嗨，我是 playerPerspective.name，playerPerspective.mbti”自然开头，让玩家身份在屏幕上说清楚；后两条再由浅入深写轻松小问题和连接当前场景的问题。不能替玩家承诺、告白或编造职业；职业字段未确认时完全不提职业。若建议语让玩家自报姓名，只能使用 playerPerspective.name，绝不能另造名字。
+严格执行 playerPerspective.naturalExpressionContract：人物卡语气永远优先，不能把女性统一写成撒娇、害羞、照顾者或“可爱腔”。女性主角可以用主动、直接、克制、笨拙或短促幽默表达自然感。建议语正文不要自行键入或仿造颜文字；服务端会在 kaomoji.mayUseNow=true 时从人物卡 preferredExamples 中稳定添加最多一个。严肃、边界、拒绝、冲突或脆弱表达不会添加。
+三条建议语必须是自然简体中文（人物 MBTI 除外），不要夹入英文词；每条最多 60 字，尽量控制在 48 字内。第一条只做一次身份说明，第二、三条不要再次说“我是 playerPerspective.name”或重复 MBTI。
+三条建议语逐条执行 contract.suggestions.plansInOrder，不要另写“我刚才做了什么”“我带了什么”或镜头外观察。NPC opening 最后一个问题如果问到了未声明的现场动作，mainline 不沿用那个动作，改为回答更一般的偏好。
 不得编造人物卡外的职业、创伤、前任或节目事实。只输出 JSON。"""
     return [{"role": "system", "content": system}, {"role": "user", "content": json.dumps({"context": context, "contract": contract}, ensure_ascii=False)}]
 
@@ -529,18 +917,46 @@ def validate_chat_opening(card: dict, snapshot: dict, payload: dict, player_card
         raise ValueError("私聊开场动作长度不符合合同")
     if not isinstance(suggestions, list) or len(suggestions) != 3:
         raise ValueError("私聊建议语必须正好三条")
-    suggestions = [str(item).strip() for item in suggestions]
+    expression_contract = _player_natural_expression_contract(
+        player_card,
+        {**conversation, "recentPlayerTexts": [item.get("playerText") for item in memories[-2:]]},
+        "",
+        snapshot["attitudes"].get(card["id"], "curious"),
+    )
+    suggestions = [
+        _compact_suggestion(_sanitize_generated_kaomoji(str(item), expression_contract))
+        for item in suggestions
+    ]
     if len(set(suggestions)) != 3 or any(not 4 <= len(item) <= 60 for item in suggestions):
         raise ValueError("私聊建议语重复或长度不符合合同")
-    forbidden = ("关系数值", "写入记忆", "触发事件", "DeepSeek", "Agent", "API", "第二把钥匙")
+    _validate_player_suggestion_surface(suggestions, expression_contract, "私聊建议语")
+    forbidden = ("关系数值", "写入记忆", "触发事件", "DeepSeek", "Dots", "dots", "Agent", "API", "第二把钥匙")
     if any(term in opening + stage_direction + "".join(suggestions) for term in forbidden):
         raise ValueError("私聊开场暴露后台或旧任务")
     if not memories and card["names"]["primary"] not in opening:
         raise ValueError("首次私聊没有介绍角色姓名")
+    if not memories and player_card and player_card["id"] != card["id"]:
+        player_name_in_opening = re.search(
+            r"我(?:叫|是)\s*" + re.escape(player_card["names"]["primary"]), opening,
+        )
+        if player_name_in_opening:
+            raise ValueError("首次私聊把玩家主角身份写给了 NPC")
     if not memories:
         cold_start_copy = opening + stage_direction + "".join(suggestions)
         if any(term in cold_start_copy for term in ("线索", "任务", "地图", "钥匙", "桌签", "节目组秘密")):
             raise ValueError("首次私聊从寒暄跳到了任务或秘密")
+        invented_scene_copy = opening + stage_direction + "".join(suggestions)
+        invented_terms = (
+            "鞋带", "脱鞋", "纸杯", "门帘", "椰子树", "座位", "胶带",
+            "灯太亮", "调暗", "左脚", "右脚", "脚有点",
+        )
+        invented_action = re.search(
+            r"(?:我刚才(?:是|先|在|把|拿|坐|站|找|脱|穿)|"
+            r"你刚才(?:进|脱|坐|站|拿|放|系|找)|我(?:今天)?带了)",
+            invented_scene_copy,
+        )
+        if any(term in invented_scene_copy for term in invented_terms) or invented_action:
+            raise ValueError("首次私聊编造了现场没有的物件或动作")
         if re.search(r"(?:刚到|来了|入住).{0,4}[一二三四五六七八九十百\d]+分钟", cold_start_copy):
             raise ValueError("首次私聊编造了精确到场时间")
     player_name = player_card["names"]["primary"] if player_card else str(snapshot.get("player", {}).get("displayName") or "").strip()
@@ -549,21 +965,32 @@ def validate_chat_opening(card: dict, snapshot: dict, payload: dict, player_card
             if player_name and claimed_name != player_name:
                 raise ValueError("私聊建议语替主角编造了错误姓名")
     if not memories and player_card:
-        if not any(re.search(r"我(?:叫|是)\s*" + re.escape(player_name), suggestion) for suggestion in suggestions):
-            raise ValueError("首次私聊建议语没有保持玩家身份")
+        player_mbti = player_card["mbti"]
         occupation = player_card.get("sourceProfile", {}).get("facts", {}).get("occupation")
         unknown_job = not isinstance(occupation, str) or any(term in occupation for term in ("待剧情", "待正式确认", "运行时职业待"))
         if unknown_job and any(re.search(r"我(?:是|在|做).{0,12}(?:工作|职业|行业|相关)", suggestion) for suggestion in suggestions):
             raise ValueError("首次私聊建议语替玩家编造了职业")
+        first_identity_pattern = (
+            r"^(?:你好|嗨)[，,！!\s]*我是\s*" + re.escape(player_name)
+            + r"[，,\s]*" + re.escape(player_mbti)
+        )
+        if not re.search(first_identity_pattern, suggestions[0], flags=re.IGNORECASE):
+            raise ValueError("首次私聊建议语没有保持玩家身份")
+        if any(player_name in suggestion or player_mbti in suggestion for suggestion in suggestions[1:]):
+            raise ValueError("首次私聊后两条建议语重复了玩家自我介绍")
+        suggestion_language_copy = "".join(suggestions).replace(player_mbti, "")
+        if re.search(r"\b[A-Za-z]{3,}\b", suggestion_language_copy):
+            raise ValueError("私聊建议语夹入了不必要的英文")
     if not memories:
         if card["mbti"] not in opening:
             raise ValueError("首次私聊没有清楚介绍 MBTI 或性格")
         if not any(anchor in opening for anchor in PUBLIC_BACKGROUND_ANCHORS[card["id"]]):
             raise ValueError("首次私聊没有介绍人物卡允许公开的工作或日常背景")
-        if not any(marker in opening for marker in ("来这里", "参加", "这次", "这七天")):
+        if not any(marker in opening for marker in ("来这里", "来这儿", "来这个节目", "上这个节目", "参加", "这次", "这七天", "到这里")):
             raise ValueError("首次私聊没有说清参加节目的来意")
         if any(term in opening for term in ("你猜", "秘密", "以后会知道", "先看你怎么回答", "试探", "看清一个人")):
             raise ValueError("首次私聊使用了谜语或抽象试探")
+    suggestions = _decorate_suggestions_with_card_expression(suggestions, expression_contract)
     typed = [
         {"type": suggestion_type, "text": text, "style": "mainline-gradient" if suggestion_type == "mainline" else suggestion_type, "action": "prefill-message" if suggestion_type == "deeper" else "send-message"}
         for suggestion_type, text in zip(("followup", "mainline", "deeper"), suggestions)
@@ -581,11 +1008,11 @@ def extract_json(text: str) -> dict:
     except json.JSONDecodeError:
         start = cleaned.find("{")
         if start < 0:
-            raise RuntimeError("DeepSeek did not return a JSON object")
+            raise RuntimeError("模型 did not return a JSON object")
         try:
             data, _ = json.JSONDecoder().raw_decode(cleaned[start:])
         except json.JSONDecodeError as error:
-            raise RuntimeError("DeepSeek did not return a complete JSON object") from error
+            raise RuntimeError("模型 did not return a complete JSON object") from error
     if not isinstance(data, dict):
-        raise RuntimeError("DeepSeek returned a non-object payload")
+        raise RuntimeError("模型 returned a non-object payload")
     return data

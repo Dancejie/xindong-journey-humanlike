@@ -19,6 +19,15 @@ RUNTIME_PATH = ROOT / "media" / "runtime-media-manifest.json"
 ASSET_ID_RE = re.compile(
     r"^hj-(?:[a-z0-9]+-[a-z0-9]+|shared-multi)-[0-9]{3}-[a-z0-9-]+$"
 )
+SOURCE_MANIFEST_PATHS = {
+    "characterCards": "content/character_cards.v3.json",
+    "runtimeMedia": "media/runtime-media-manifest.json",
+    "r6Plan": "media/production/gender-rotation-r6/manifest.r6.json",
+}
+MBTI_TYPES = {
+    "INTJ", "INTP", "ENTJ", "ENTP", "INFJ", "INFP", "ENFJ", "ENFP",
+    "ISTJ", "ISFJ", "ESTJ", "ESFJ", "ISTP", "ISFP", "ESTP", "ESFP",
+}
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -46,6 +55,34 @@ def validate_registry(
     if registry.get("schemaVersion") != "heart-journey/character-asset-registry-v1":
         failures.append("unexpected registry schemaVersion")
 
+    source_manifests = registry.get("sourceManifests")
+    if not isinstance(source_manifests, dict):
+        failures.append("sourceManifests must be an object")
+        source_manifests = {}
+    for source_id, expected_path in SOURCE_MANIFEST_PATHS.items():
+        source = source_manifests.get(source_id)
+        if not isinstance(source, dict):
+            failures.append(f"missing source manifest binding: {source_id}")
+            continue
+        if source.get("path") != expected_path:
+            failures.append(
+                f"source manifest path mismatch: {source_id} expected={expected_path!r} actual={source.get('path')!r}"
+            )
+            continue
+        declared_sha = str(source.get("sha256") or "")
+        if not re.fullmatch(r"[0-9a-f]{64}", declared_sha):
+            failures.append(f"invalid source manifest SHA-256: {source_id}")
+            continue
+        source_path = root / expected_path
+        if not source_path.is_file():
+            failures.append(f"missing bound source manifest: {source_id} -> {expected_path}")
+        elif verify_hashes:
+            actual_sha = sha256_file(source_path)
+            if actual_sha != declared_sha:
+                failures.append(
+                    f"source manifest SHA mismatch: {source_id} declared={declared_sha} actual={actual_sha}"
+                )
+
     cards_root = load_json(root / "content" / "character_cards.v3.json")
     runtime_root = load_json(root / "media" / "runtime-media-manifest.json")
     cards = [item for item in cards_root.get("cards", []) if isinstance(item, dict)]
@@ -55,8 +92,22 @@ def validate_registry(
     directory = [item for item in registry.get("characters", []) if isinstance(item, dict)]
     assets = [item for item in registry.get("assets", []) if isinstance(item, dict)]
 
-    if len(card_by_id) != 16 or len(directory) != 16:
-        failures.append(f"expected 16 character cards and directory rows, got cards={len(card_by_id)} directory={len(directory)}")
+    if len(card_by_id) != 32 or len(directory) != 32:
+        failures.append(f"expected 32 character cards and directory rows, got cards={len(card_by_id)} directory={len(directory)}")
+    roster_pairs = Counter(
+        (
+            str(card.get("mbti") or "").upper(),
+            str((card.get("identity") or {}).get("gender") or ""),
+        )
+        for card in card_by_id.values()
+    )
+    expected_pairs = {
+        (mbti, gender): 1
+        for mbti in MBTI_TYPES
+        for gender in ("男性", "女性")
+    }
+    if dict(roster_pairs) != expected_pairs:
+        failures.append("full MBTI roster must contain exactly one male and one female card per type")
     directory_by_id = {str(item.get("characterId")): item for item in directory if item.get("characterId")}
     if set(directory_by_id) != set(card_by_id):
         failures.append("character directory IDs do not exactly match v3 character cards")
@@ -88,19 +139,58 @@ def validate_registry(
     static_portraits = [item for item in assets if item.get("mediaType") == "image" and item.get("sequence") == "000"]
     dynamic_portraits = [item for item in assets if item.get("mediaType") == "video" and item.get("sequence") == "001"]
     event_routes = [item for item in assets if item.get("mediaType") == "video" and item.get("sequence") not in {"001"}]
-    if (len(static_portraits), len(dynamic_portraits), len(event_routes)) != (16, 16, len(runtime_assets) - 16):
+    if len(event_routes) != len(runtime_assets) - len(dynamic_portraits):
         failures.append(
             f"inventory counts mismatch: static={len(static_portraits)} dynamic={len(dynamic_portraits)} "
-            f"eventRoutes={len(event_routes)} expectedEvents={len(runtime_assets) - 16}"
+            f"eventRoutes={len(event_routes)} expectedEvents={len(runtime_assets) - len(dynamic_portraits)}"
         )
 
-    # Every playable identity must have exactly one static and one dynamic
-    # portrait, both bound to that same identity.
+    # A character is fully identity-covered, explicitly static-only because a
+    # generated moving portrait was held, or explicitly planned with no media.
+    # Unexplained partial coverage is never accepted.
+    media_covered_ids: set[str] = set()
+    static_only_held_ids: set[str] = set()
+    planned_no_media_ids: set[str] = set()
     for character_id in sorted(card_by_id):
         static = [item for item in static_portraits if item.get("characterId") == character_id]
         dynamic = [item for item in dynamic_portraits if item.get("characterId") == character_id]
-        if len(static) != 1 or len(dynamic) != 1:
+        card = card_by_id[character_id]
+        row = directory_by_id.get(character_id) or {}
+        coverage = row.get("mediaCoverage") if isinstance(row.get("mediaCoverage"), dict) else {}
+        if len(static) == 1 and len(dynamic) == 1:
+            media_covered_ids.add(character_id)
+            expected_coverage_status = "runtime-identity-covered"
+        elif len(static) == 1 and len(dynamic) == 0:
+            static_only_held_ids.add(character_id)
+            expected_coverage_status = "runtime-static-only-held-dynamic"
+            media = card.get("media") if isinstance(card.get("media"), dict) else {}
+            if (
+                media.get("status") != "planned"
+                or media.get("generationRequired") is not True
+                or media.get("runtimeStatus") != "blocked"
+                or str(card.get("video") or "").strip()
+            ):
+                failures.append(f"static-only card is not explicitly held/blocked: {character_id}")
+        elif len(static) == 0 and len(dynamic) == 0:
+            planned_no_media_ids.add(character_id)
+            expected_coverage_status = "planned-no-runtime-identity-media"
+            media = card.get("media") if isinstance(card.get("media"), dict) else {}
+            if (
+                media.get("status") != "planned"
+                or media.get("generationRequired") is not True
+                or media.get("runtimeStatus") != "blocked"
+                or str(card.get("video") or "").strip()
+            ):
+                failures.append(f"missing-media card is not explicitly planned/blocked: {character_id}")
+        else:
             failures.append(f"portrait coverage mismatch for {character_id}: static={len(static)} dynamic={len(dynamic)}")
+            expected_coverage_status = "partial-invalid"
+        if coverage != {
+            "status": expected_coverage_status,
+            "staticPortraitAssetCount": len(static),
+            "dynamicPortraitAssetCount": len(dynamic),
+        }:
+            failures.append(f"character mediaCoverage drift: {character_id}")
 
     hash_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for asset in assets:
@@ -129,6 +219,36 @@ def validate_registry(
 
         if not runtime_path.startswith("/media/") or source_path != f"frontend/public{runtime_path}":
             failures.append(f"source/runtime path contract mismatch: {asset_id}")
+        runtime_references = asset.get("runtimeReferences")
+        if runtime_references is not None:
+            if not isinstance(runtime_references, list) or not runtime_references:
+                failures.append(f"runtimeReferences must be a non-empty array: {asset_id}")
+            else:
+                for index, reference in enumerate(runtime_references):
+                    if not isinstance(reference, dict):
+                        failures.append(f"invalid runtime reference row {index}: {asset_id}")
+                        continue
+                    reference_path = reference.get("path")
+                    reference_line = reference.get("lineHint")
+                    reference_match = reference.get("match")
+                    if not isinstance(reference_path, str) or not reference_path or Path(reference_path).is_absolute():
+                        failures.append(f"invalid runtime reference path {index}: {asset_id}")
+                        continue
+                    if isinstance(reference_line, bool) or not isinstance(reference_line, int) or reference_line < 1:
+                        failures.append(f"invalid runtime reference lineHint {index}: {asset_id}")
+                        continue
+                    if reference_match != runtime_path:
+                        failures.append(f"runtime reference match/path mismatch {index}: {asset_id}")
+                        continue
+                    evidence_path = root / reference_path
+                    if not evidence_path.is_file():
+                        failures.append(f"missing runtime reference evidence {index}: {asset_id} -> {reference_path}")
+                        continue
+                    evidence_text = evidence_path.read_text(encoding="utf-8")
+                    if runtime_path not in evidence_text:
+                        failures.append(
+                            f"runtime reference evidence drift {index}: {asset_id} -> {reference_path}"
+                        )
         file_path = root / source_path
         if not file_path.is_file():
             failures.append(f"missing source media: {asset_id} -> {source_path}")
@@ -195,6 +315,9 @@ def validate_registry(
     summary = registry.get("summary") if isinstance(registry.get("summary"), dict) else {}
     expected_summary = {
         "characters": len(directory), "assets": len(assets),
+        "mediaCoveredCharacters": len(media_covered_ids),
+        "staticOnlyHeldCharacters": len(static_only_held_ids),
+        "plannedNoMediaCharacters": len(planned_no_media_ids),
         "images": len([item for item in assets if item.get("mediaType") == "image"]),
         "videos": len([item for item in assets if item.get("mediaType") == "video"]),
         "staticPortraits": len(static_portraits), "dynamicPortraits": len(dynamic_portraits),

@@ -1,0 +1,252 @@
+{
+  "schemaVersion": "heart-journey/r9-character-extension-v1",
+  "contentVersion": "3.4.0-distinct-character-cores",
+  "status": "authoring-candidate",
+  "generatedAt": "2026-09-01",
+  "cardFiles": [
+    "analysts.json",
+    "diplomats.json",
+    "sentinels.json",
+    "explorers.json"
+  ],
+  "expectedCardCount": 16,
+  "expectedTypes": [
+    "ENTJ",
+    "ENTP",
+    "INFP",
+    "ENFJ",
+    "ISTJ",
+    "ESTJ",
+    "ISFP",
+    "ESFP"
+  ],
+  "mbtiUsePolicy": {
+    "purpose": "MBTI只作为注意偏好、信息处理和压力修复的作者镜头。",
+    "notAllowed": [
+      "临床诊断或心理健康推断",
+      "把四字母类型写成唯一、固定或完整人格",
+      "用类型替代人物事实、经历、利益、边界和选择",
+      "用性别推导语气、职业、照料责任、领导方式或亲密表达",
+      "在运行时输出官方描述原文或私密思维链"
+    ],
+    "observableDecisionTrace": "cue -> public interpretation -> chosen tactic -> spoken move -> repair or exit",
+    "authoringRule": "删除姓名、性别和MBTI标签后，每个人仍须能由职业动作、利益、边界、声音和修复方式被区分。"
+  },
+  "researchPatch": {
+    "notes": [
+      "R9补齐ENTJ、ENTP、INFP、ENFJ、ISTJ、ESTJ、ISFP、ESFP，每型各一男一女。",
+      "官方MBTI来源只支持抽象偏好镜头；16位人物的职业、经历、利益、边界、事件和台词均为本项目原创。",
+      "所有few-shot只保存可观察decisionTrace，不保存或请求模型私密chain-of-thought。",
+      "同型男女角色不互为换皮版本；性别不决定热情、理性、照料、领导或颜文字风格。",
+      "R9 中 6 位人物具有欧洲大陆生活背景，城市与职业来源仅用于现实语境，不用国籍推导性格，也不复制任何名人或影视人物。",
+      "删除姓名、性别、MBTI与国籍后，每位人物仍须能由第一注意对象、压力失真、修复动作、职业道具和关系边界被识别。"
+    ],
+    "sourceUpdates": [
+      {
+        "id": "source.mbti-foundation-types",
+        "locator": "All 16 type descriptions; R9 authoring uses all 16 only as non-diagnostic preference lenses",
+        "accessedAt": "2026-09-01",
+        "note": "用于16种类型的抽象偏好层；不把类型描述直接当作人物事实、诊断或唯一人格。"
+      },
+      {
+        "id": "source.mbti-type-dynamics",
+        "locator": "Dominant and auxiliary processes, best-use and overuse descriptions for all 16 types",
+        "accessedAt": "2026-09-01",
+        "note": "用于把偏好转写为可观察的输入过滤、决策、压力失真和修复；不推断私密思维。"
+      }
+    ],
+    "newSources": [
+      {
+        "id": "source.r9-character-authoring",
+        "label": "《心动之旅》R9全MBTI双性别原创人物扩展源",
+        "locator": "content/character_cards.r9/manifest.json and the four declared cardFiles",
+        "evidenceLevel": "project-original-authoring-source",
+        "rightsUse": "authoring-source",
+        "note": "记录16位新角色的原创身份、利益、边界、可观察decisionTrace与运行时兼容字段。",
+        "url": null,
+        "accessedAt": "2026-09-01",
+        "rightsStatus": "project-original",
+        "targetJurisdictionReview": "Project-original text; public distribution still follows project privacy, trademark and release review.",
+        "transferRule": "Use only this project's authored character facts and original micro-scenes; the latest reviewed card takes precedence.",
+        "prohibitedTransfer": [
+          "cross-character memory",
+          "gender stereotypes",
+          "type-as-destiny claims",
+          "private chain-of-thought"
+        ]
+      },
+      {
+        "id": "source.r9.eu-mobility",
+        "label": "European Commission / Your Europe：在其他欧盟国家工作与居住",
+        "locator": "Working abroad and workers' residence rights",
+        "evidenceLevel": "official-public-guidance",
+        "rightsUse": "research-only",
+        "note": "只用于构造真实的跨城工作、居住登记与关系距离压力；欧盟公民跨境工作不虚构签证到期危机。",
+        "url": "https://europa.eu/youreurope/citizens/work/work-abroad/index_en.htm",
+        "accessedAt": "2026-09-01",
+        "rightsStatus": "research-only",
+        "targetJurisdictionReview": "EU public guidance; verify character citizenship and country-specific rules before any legal claim.",
+        "transferRule": "只迁移可观察的日程、跨境工作与行政选择，不复制网页文案。",
+        "prohibitedTransfer": ["法律建议", "虚构签证倒计时", "官网原文", "国籍人格化"]
+      },
+      {
+        "id": "source.r9.barcelona-creative-public-services",
+        "label": "Barcelona City Council：创意产业与数字公共服务背景",
+        "locator": "Barcelona creative industries and public digital participation ecosystem",
+        "evidenceLevel": "official-city-context",
+        "rightsUse": "research-only",
+        "note": "用于 Elena 的巴塞罗那公共服务产品工作环境，不证明人物性格。",
+        "url": "https://ajuntament.barcelona.cat/turisme/sites/default/files/barcelona_en_xifres-en-web2.pdf",
+        "accessedAt": "2026-09-01",
+        "rightsStatus": "research-only",
+        "targetJurisdictionReview": "City-level context only; character, employer and projects remain fictional.",
+        "transferRule": "只迁移城市产业语境与公共服务流程动作。",
+        "prohibitedTransfer": ["复制真实机构", "冒充政府项目", "官网原文", "城市刻板印象"]
+      },
+      {
+        "id": "source.r9.berlin-interactive-exhibitions",
+        "label": "Berlin.de：沉浸式与互动展览",
+        "locator": "Immersive and Interactive Exhibitions",
+        "evidenceLevel": "official-city-context",
+        "rightsUse": "research-only",
+        "note": "用于 Luca 的互动展览职业动作和展场语境，不复刻任何真实展项。",
+        "url": "https://www.berlin.de/en/exhibitions/interactive/",
+        "accessedAt": "2026-09-01",
+        "rightsStatus": "research-only",
+        "targetJurisdictionReview": "Official city listing; all character projects and mechanisms are original.",
+        "transferRule": "只迁移互动、声光、参与式展览的抽象工作流程。",
+        "prohibitedTransfer": ["复制真实展项", "使用机构商标", "官网原文", "天才设计师模板"]
+      },
+      {
+        "id": "source.r9.netherlands-cultural-heritage",
+        "label": "Cultural Heritage Agency of the Netherlands：收藏与修复职责",
+        "locator": "Collections and museums / what we do",
+        "evidenceLevel": "official-agency-context",
+        "rightsUse": "research-only",
+        "note": "用于 Elise 的材料、记录、负责任使用和修复流程，不复制任何真实项目。",
+        "url": "https://www.cultureelerfgoed.nl/domeinen/collecties-en-musea",
+        "accessedAt": "2026-09-01",
+        "rightsStatus": "research-only",
+        "targetJurisdictionReview": "Agency context only; fictional professional profile.",
+        "transferRule": "只迁移材料核对、记录留痕和负责任使用的职业动作。",
+        "prohibitedTransfer": ["复制真实项目", "冒充政府雇员", "官网原文", "荷兰人严谨刻板印象"]
+      },
+      {
+        "id": "source.r9.hamburg-smartport",
+        "label": "Hamburg Port Authority：smartPORT logistics",
+        "locator": "Flow of goods, sensors and rapid information sharing",
+        "evidenceLevel": "official-port-context",
+        "rightsUse": "research-only",
+        "note": "用于 Leon 的库存、冷链与信息共享职业动作；人物与节展公司均为原创。",
+        "url": "https://www.hamburg-port-authority.de/en/hpa-360/smartport",
+        "accessedAt": "2026-09-01",
+        "rightsStatus": "research-only",
+        "targetJurisdictionReview": "Port operations context only; not an HPA endorsement or employee profile.",
+        "transferRule": "只迁移货物流、传感器、信息共享和责任看板的抽象机制。",
+        "prohibitedTransfer": ["冒充港务局员工", "复制系统界面", "官网原文", "德国效率刻板印象"]
+      },
+      {
+        "id": "source.r9.ifrc-first-aid-education",
+        "label": "IFRC：International First Aid, Resuscitation, and Education Guidelines",
+        "locator": "Education modalities, contextualisation and safe classroom checklist",
+        "evidenceLevel": "international-guideline",
+        "rightsUse": "research-only",
+        "note": "用于 Mateo 的安全示范、停止信号和可退出教学结构；不把产品写成医疗建议。",
+        "url": "https://www.ifrc.org/sites/default/files/2022-02/EN_GFARC_GUIDELINES_2020.pdf",
+        "accessedAt": "2026-09-01",
+        "rightsStatus": "research-only",
+        "targetJurisdictionReview": "Training context only; verify current local guidance for real first-aid instruction.",
+        "transferRule": "只迁移情境化教学、可逆练习、反馈和安全停止结构。",
+        "prohibitedTransfer": ["医疗建议", "使用红十字标识", "复制指南原文", "冒险挑战"]
+      },
+      {
+        "id": "source.r9.lyon-markets",
+        "label": "Ville de Lyon：里昂食品市场与季节性经营",
+        "locator": "Les marchés lyonnais and local seasonal produce",
+        "evidenceLevel": "official-city-context",
+        "rightsUse": "research-only",
+        "note": "用于 Camille 的季节性菜单、市集和收摊劳动语境，不复制商户或品牌。",
+        "url": "https://www.lyon.fr/vie-pratique/commerces-locaux/les-marches-lyonnais",
+        "accessedAt": "2026-09-01",
+        "rightsStatus": "research-only",
+        "targetJurisdictionReview": "City market context only; food safety and permits remain outside the game claim.",
+        "transferRule": "只迁移季节性食材、市集营业与劳动收尾机制。",
+        "prohibitedTransfer": ["复制真实商户", "食品安全承诺", "官网原文", "法国美食刻板印象"]
+      }
+    ],
+    "typeEvidence": [
+      {
+        "id": "evidence.mbti.entj.preference",
+        "mbti": "ENTJ",
+        "sourceId": "source.mbti-type-dynamics",
+        "locator": "ENTJ type-dynamics row; Extraverted Thinking and Introverted Intuition process descriptions",
+        "claim": "ENTJ偏好镜头可能先发现流程中的矛盾和低效，再组织长期目标与执行步骤；健康表达必须公开授权、异议入口和复核条件。",
+        "transferRule": "转写为可见问题 -> 提议目标与责任 -> 邀请反对或替代方案 -> 按新事实修订。",
+        "prohibitedTransfer": ["官方原句", "天生领导者定论", "控制欲诊断", "把强势写成性别特征"]
+      },
+      {
+        "id": "evidence.mbti.entp.preference",
+        "mbti": "ENTP",
+        "sourceId": "source.mbti-type-dynamics",
+        "locator": "ENTP type-dynamics row; Extraverted Intuition and Introverted Thinking process descriptions",
+        "claim": "ENTP偏好镜头可能迅速提出多种概念路径并检验前提；压力下可能把不断换题误当成推进。",
+        "transferRule": "转写为发现矛盾 -> 提两个可选假设 -> 选一项做有限验证 -> 对未完成事项给期限或退出。",
+        "prohibitedTransfer": ["官方原句", "抬杠人格", "聪明优越论", "用玩笑免除修复"]
+      },
+      {
+        "id": "evidence.mbti.infp.preference",
+        "mbti": "INFP",
+        "sourceId": "source.mbti-type-dynamics",
+        "locator": "INFP type-dynamics row; Introverted Feeling and Extraverted Intuition process descriptions",
+        "claim": "INFP偏好镜头可能核对选择是否符合个人价值，同时看见人的潜能和替代路径；价值受压时仍需把拒绝说成可观察边界。",
+        "transferRule": "转写为识别价值冲突 -> 说明自己的位置 -> 给一项不背叛价值的具体选择 -> 必要时退出。",
+        "prohibitedTransfer": ["官方原句", "脆弱或不切实际定论", "道德纯洁化", "沉默等于同意"]
+      },
+      {
+        "id": "evidence.mbti.enfj.preference",
+        "mbti": "ENFJ",
+        "sourceId": "source.mbti-type-dynamics",
+        "locator": "ENFJ type-dynamics row; Extraverted Feeling and Introverted Intuition process descriptions",
+        "claim": "ENFJ偏好镜头可能注意群体需要和个人潜力并促成参与；过度使用时可能在未获同意前替别人安排成长。",
+        "transferRule": "转写为点出可见需要 -> 询问是否要协助 -> 提供带退出权的组织动作 -> 说出自己的需要。",
+        "prohibitedTransfer": ["官方原句", "救世主设定", "读心", "把照料写成女性义务"]
+      },
+      {
+        "id": "evidence.mbti.istj.preference",
+        "mbti": "ISTJ",
+        "sourceId": "source.mbti-type-dynamics",
+        "locator": "ISTJ type-dynamics row; Introverted Sensing and Extraverted Thinking process descriptions",
+        "claim": "ISTJ偏好镜头可能依据具体记录、责任和既有标准稳步推进；新事实出现时，可靠性也包括公开修订旧流程。",
+        "transferRule": "转写为核对记录 -> 标出责任和偏差 -> 给可执行步骤 -> 新证据成立时更新规则。",
+        "prohibitedTransfer": ["官方原句", "僵化守旧标签", "情感迟钝定论", "规则高于同意"]
+      },
+      {
+        "id": "evidence.mbti.estj.preference",
+        "mbti": "ESTJ",
+        "sourceId": "source.mbti-type-dynamics",
+        "locator": "ESTJ type-dynamics row; Extraverted Thinking and Introverted Sensing process descriptions",
+        "claim": "ESTJ偏好镜头可能快速组织现实资源、责任和标准以取得结果；有效推进必须先确认任务授权并允许不同执行方案。",
+        "transferRule": "转写为盘点资源 -> 明确负责人和期限 -> 询问异议 -> 以结果复盘而非人格归因。",
+        "prohibitedTransfer": ["官方原句", "霸道主管模板", "效率合理化越界", "把领导写成男性特权"]
+      },
+      {
+        "id": "evidence.mbti.isfp.preference",
+        "mbti": "ISFP",
+        "sourceId": "source.mbti-type-dynamics",
+        "locator": "ISFP type-dynamics row; Introverted Feeling and Extraverted Sensing process descriptions",
+        "claim": "ISFP偏好镜头可能在当下感受、个人空间和价值一致之间做选择；避免冲突不能替代明确拒绝。",
+        "transferRule": "转写为注意现场感受 -> 说明个人偏好或不适 -> 给低压力选择 -> 边界持续被越过时离开。",
+        "prohibitedTransfer": ["官方原句", "柔弱艺术家模板", "永不冲突", "审美等于女性气质"]
+      },
+      {
+        "id": "evidence.mbti.esfp.preference",
+        "mbti": "ESFP",
+        "sourceId": "source.mbti-type-dynamics",
+        "locator": "ESFP type-dynamics row; Extraverted Sensing and Introverted Feeling process descriptions",
+        "claim": "ESFP偏好镜头可能迅速读取现场人与物并通过共同尝试推进；热烈必须保留节奏、同意和后续兑现。",
+        "transferRule": "转写为捕捉现场线索 -> 发起可逆行动 -> 确认参与和速度 -> 当日完成一项收尾。",
+        "prohibitedTransfer": ["官方原句", "派对动物标签", "冲动失责定论", "活泼等于幼态"]
+      }
+    ]
+  }
+}

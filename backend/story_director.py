@@ -268,7 +268,7 @@ def _visible_memory_ids(state: dict[str, Any], participants: list[str]) -> set[s
 
 
 def build_story_director_messages(snapshot: dict[str, Any], candidates: list[dict[str, Any]]) -> list[dict[str, str]]:
-    """Assemble a small, privacy-bounded DeepSeek prompt for selecting one event."""
+    """Assemble a small, privacy-bounded model prompt for selecting one event."""
     state = ensure_story_state(snapshot)
     candidate_ids = {item["eventId"] for item in candidates}
     participant_ids = {character_id for item in candidates for character_id in item["eligibleParticipantIds"]}

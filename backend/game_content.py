@@ -1,4 +1,4 @@
-"""EchoCore-compatible story state and validated DeepSeek Agent commits."""
+"""EchoCore-compatible story state and validated provider-neutral Agent commits."""
 from __future__ import annotations
 
 import json
@@ -13,7 +13,7 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parent.parent
 RELATIONSHIP_AXES = ("trust", "affection", "respect", "fear", "debt", "attraction", "resentment")
 ATTITUDES = {"warm", "curious", "guarded", "challenging", "vulnerable", "softened", "uncertain", "honest", "moved", "careful", "steady", "boundary"}
-CONTENT_VERSION = "3.9.0-exact-character-media"
+CONTENT_VERSION = "4.1.0-full-mbti-lite-r10"
 CHAT_CONTEXT_VERSION = 1
 CHAT_LOCATIONS = {
     "hotel-entrance": {"name": "酒店玄关", "supportsGroup": True},
@@ -50,6 +50,102 @@ MECHANICAL_COPY_TERMS = (
     "真正看见一个人", "行动目标", "关系目标", "共同信任目标", "建立信任", "确立关系",
     "推进剧情", "完成主线", "最具体的是哪一部分", "如果先不考虑节目镜头",
 )
+
+_KAOMOJI_RE = re.compile(
+    r"(?:d\(d[^)\n]{1,8}\)\*?|ლ\([^()\n]{1,12}ლ\)|\([^()\n]{0,10}(?:∀|◡|ܫ|ω|▽|∠|＾|\^_\^)[^()\n]{0,10}\)\*?)"
+)
+_DAMAGED_KAOMOJI_RE = re.compile(
+    r"\([^)]*(?:◕|∀|◡|ܫ|ω|▽|∠|＾)[^)]*[A-Za-z]{2,}[^)]*\)\*?"
+)
+_UNAPPROVED_KAOMOJI_SHAPE_RE = re.compile(
+    r"(?:d\(d[^\s，。！？；\n]{0,28}|ლ\([^，。！？；\n]{0,36}\)|"
+    r"\([^，。！？；\n]{0,36}(?:◕|∀|◡|ܫ|ω|▽|∠|＾|▿|╹|ʃ|‿|๑|｡|•|￣|｀)"
+    r"[^，。！？；\n]{0,36}\)?\*?)"
+)
+_FEMALE_FALLBACK_KAOMOJI = {
+    "jiangmi": "(◕ܫ◕)",
+    "sunnian": "ლ(╹◡╹ლ)",
+    "tangli": "d(d＇∀＇)*",
+}
+_SERIOUS_SUGGESTION_MARKERS = (
+    "不舒服", "别这样", "拒绝", "越界", "生气", "道歉", "害怕", "难受", "哭",
+    "分手", "退出", "创伤", "强迫", "逼我", "不想说", "冷静一下", "前任", "伤害",
+)
+
+
+def _kaomoji_count(text: str) -> int:
+    return len(_KAOMOJI_RE.findall(str(text or "")))
+
+
+def _sanitize_generated_kaomoji(text: str) -> str:
+    """Preserve reviewed glyphs while removing provider-mutated lookalikes."""
+    sanitized = str(text or "").strip()
+    approved = tuple(_FEMALE_FALLBACK_KAOMOJI.values())
+    placeholders: dict[str, str] = {}
+    for index, exact in enumerate(approved):
+        placeholder = f"__KAOMOJI_{index}__"
+        if exact in sanitized:
+            sanitized = sanitized.replace(exact, placeholder)
+            placeholders[placeholder] = exact
+    sanitized = _DAMAGED_KAOMOJI_RE.sub("", sanitized)
+    sanitized = _UNAPPROVED_KAOMOJI_SHAPE_RE.sub("", sanitized)
+    for placeholder, exact in placeholders.items():
+        sanitized = sanitized.replace(placeholder, exact)
+    return re.sub(r"[ \t]{2,}", " ", sanitized).strip()
+
+
+def _player_suggestion_surface_policy(
+    snapshot: dict[str, Any], target_card: dict[str, Any], dialogue: str = "", player_text: str = "",
+    attitude: str | None = None,
+) -> dict[str, Any]:
+    player_id = snapshot["player"]["perspectiveCharacterId"]
+    player_card = CHARACTER_CARD_MAP[player_id]
+    gender = player_card.get("identity", {}).get("gender") or snapshot["player"].get("gender")
+    expressiveness = int(player_card.get("psychology", {}).get("axes", {}).get("emotionalExpressiveness") or 0)
+    current_attitude = str(attitude or snapshot.get("attitudes", {}).get(target_card["id"], "curious"))
+    context_copy = " ".join((str(player_text or ""), str(dialogue or ""), str(snapshot.get("nodeId") or "")))
+    explicit_refusal = bool(re.search(r"(?:请|我|你)?不要(?:再|问|碰|逼|替|继续|这样)|别(?:再|这样|碰|逼)", context_copy))
+    serious = (
+        current_attitude in {"guarded", "challenging", "vulnerable", "uncertain", "boundary"}
+        or explicit_refusal
+        or any(marker in context_copy for marker in _SERIOUS_SUGGESTION_MARKERS)
+    )
+    cooldown_active = any(
+        _kaomoji_count(str(memory.get("playerText") or ""))
+        for memory in snapshot.get("echoMemories", [])[-2:]
+        if isinstance(memory, dict)
+    )
+    light_node = snapshot.get("nodeId") in {"guided-chat", "team-up"}
+    may_use = bool(
+        gender == "女性"
+        and expressiveness >= 40
+        and light_node
+        and not serious
+        and not cooldown_active
+    )
+    return {
+        "playerId": player_id,
+        "gender": gender,
+        "emotionalExpressiveness": expressiveness,
+        "mayUseKaomoji": may_use,
+        "maxKaomoji": 1 if may_use else 0,
+        "cooldownActive": cooldown_active,
+        "fallbackKaomoji": _FEMALE_FALLBACK_KAOMOJI.get(player_id),
+    }
+
+
+def _validate_suggestion_surface(
+    snapshot: dict[str, Any], target_card: dict[str, Any], items: list[dict[str, str]],
+    dialogue: str, player_text: str, attitude: str | None,
+) -> None:
+    policy = _player_suggestion_surface_policy(snapshot, target_card, dialogue, player_text, attitude)
+    total = sum(_kaomoji_count(item.get("text", "")) for item in items)
+    if total > policy["maxKaomoji"]:
+        raise ValueError("模型 建议语颜文字使用过多，或不符合主角人物卡、冷却与当前语境")
+    for item in items:
+        text = item.get("text", "")
+        if _kaomoji_count(text) and len(re.findall(r"[\u4e00-\u9fff]", text)) < 4:
+            raise ValueError("模型 建议语不能用颜文字代替完整表达")
 
 INTRODUCTION_FALLBACKS: dict[str, dict[str, tuple[str, str]]] = {
     "shenmo": {
@@ -178,7 +274,7 @@ CAST_FIRST_IMPRESSION_FALLBACKS: dict[str, tuple[str, str]] = {
     ),
     "guyan": (
         "我想再认识顾言。他承认自己不擅长寒暄，却没有拿分析代替真话。",
-        "三分钟单聊时，我想听听他不准备标准答案会怎么说。",
+        "之后单聊时，我想听听他不准备标准答案会怎么说。",
     ),
     "jiangwan": (
         "我先记住江晚。她没有替任何人下结论，也清楚说了自己想被认识。",
@@ -194,19 +290,84 @@ CAST_FIRST_IMPRESSION_FALLBACKS: dict[str, tuple[str, str]] = {
     ),
     "chensu": (
         "我想再认识陈叙。他话不多，却把想练习说清楚这件事讲得很实在。",
-        "三分钟单聊时，我想问一个具体问题，看看他会不会认真回答。",
+        "之后单聊时，我想问一个具体问题，看看他会不会认真回答。",
     ),
 }
 CAST_FIRST_IMPRESSION_FALLBACKS.update({
     "luyao": ("我先记住陆遥。她把工作和来意讲得很清楚，也坦白自己并非从不犹豫。", "晚餐分工时，我想看看她会不会真的把改变主意说出来。"),
     "yecheng": ("我对叶澄有点好奇。她很自然地照顾场面，却先说了自己也想被询问。", "之后一起做事时，我想先问她一次真正的偏好。"),
     "tangli": ("我记住了唐梨。她说话很快，但提到别人说停时明显认真下来。", "如果有户外活动，我想看看她会怎样把选择权交回来。"),
-    "wenxu": ("我想再认识温序。她承认会边说边改，却没有用分析躲开自己的来意。", "三分钟单聊时，我想给她一个不用准备完整答案的问题。"),
+    "wenxu": ("我想再认识温序。她承认会边说边改，却没有用分析躲开自己的来意。", "之后单聊时，我想给她一个不用准备完整答案的问题。"),
     "hechuan": ("我先记住贺川。他很会听，也主动说了自己不想只做倾听者。", "之后再聊时，我想把一个问题真正留给他回答。"),
     "peiran": ("我对裴然有点好奇。他把客厅带热了，也坦白自己在意热闹结束以后。", "场面安静时，我想看看他会不会仍然留在对话里。"),
     "lichuan": ("我记住了黎川。他很会组织大家，却直接说不想再一个人收尾。", "晚餐准备时，我想看看谁会主动和他分担。"),
     "qiaolan": ("我想再认识乔岚。她话不多，却把想练习先解释一句说得很实在。", "一起做事时，我想看看她会不会在行动前先问我。"),
 })
+
+
+def _ensure_full_roster_surface_contracts() -> None:
+    """Derive safe Day 1 copy contracts for cards added after the legacy cast.
+
+    Authored entries above remain the preferred copy.  New cards still need a
+    complete, truthful fallback before an LLM is available, so the derivation
+    only uses public facts and relationship desires already present in the
+    interoperable character card.  It never invents props, trauma or jobs.
+    """
+    for card in CHARACTER_CARDS:
+        character_id = card["id"]
+        name = card["names"]["primary"]
+        aliases = [
+            str(alias).strip()
+            for alias in card.get("names", {}).get("aliases", [])
+            if str(alias).strip()
+        ]
+        # Long international legal names are useful on the profile card, but a
+        # first-impression choice should sound like somebody recalling a person,
+        # not reading an ID document.  Prefer the authored short first-name alias
+        # for this compact surface while keeping the full name in introductions.
+        surface_name = aliases[0] if aliases else name
+        mbti = card["mbti"]
+        pronoun = str((card.get("names", {}).get("pronouns") or ["TA"])[0])
+        facts = card.get("sourceProfile", {}).get("facts", {})
+        age = facts.get("age")
+        occupation = str(facts.get("occupation") or "").strip()
+        occupation_known = bool(occupation) and not any(
+            term in occupation for term in ("待剧情", "待正式确认", "运行时职业待", "待公开")
+        )
+        interest = str(card.get("drives", {}).get("independentInterest") or "愿意从一起生活的小事认识人").strip("。")
+        background = f"是{occupation}" if occupation_known else f"平时{interest}"
+        age_copy = f"，{age}岁" if isinstance(age, int) else ""
+        desire = str(
+            (card.get("psychology", {}).get("privateDesires") or ["在相处里认识真实的彼此"])[0]
+        ).strip("。")
+        mask = str(
+            (card.get("psychology", {}).get("publicMask") or ["会先认真认识眼前的人"])[0]
+        ).strip("。")
+
+        INTRODUCTION_FALLBACKS.setdefault(character_id, {
+            "intro-clear": (
+                f"大家好，我叫{name}{age_copy}，{background}，MBTI是{mbti}。来这里，是想在真实相处里{desire}。",
+                "把姓名、公开背景和参加原因自然说清",
+            ),
+            "intro-question": (
+                f"我是{name}，{mbti}，{background}。这次来想先好好认识大家，也看看相处里会发生什么。你们第一天最想从哪件小事开始？",
+                "简短介绍自己，再留一个每个人都容易回答的问题",
+            ),
+            "intro-honest": (
+                f"工作上我{background}。生活里你们可以叫我{name}，{mbti}。我看起来{mask}，但这七天更想试试：{desire}。",
+                "交代公开信息，也说出第一眼印象背后的真实期待",
+            ),
+        })
+        INTRO_BACKGROUND_ANCHORS.setdefault(
+            character_id,
+            (occupation,) if occupation_known else tuple(term for term in ("平时", "喜欢", "日常") if term),
+        )
+        INTRO_REASON_ANCHORS.setdefault(character_id, ("相处", "认识", "真实", "自己"))
+        CAST_FIRST_IMPRESSION_FALLBACKS.setdefault(character_id, (
+            f"我先记住了{surface_name}。{pronoun}把自己的背景说得很清楚，也没有把{mask}当成完美人设。",
+            f"之后一起做事时，我想看看{pronoun}会怎样把“{desire}”落到一个具体选择里。",
+        ))
+
 
 STORY_OBJECTIVES = {
     "arrival-context": "选定你想怎样进入这段七天六夜的旅程",
@@ -267,11 +428,25 @@ CARD_PACKAGE = _load_json("character_cards.v3.json")
 PLAYER_GROUPS: dict[str, list[str]] = CARD_PACKAGE["playerGroups"]
 CHARACTER_CARDS: list[dict[str, Any]] = CARD_PACKAGE["cards"]
 CHARACTER_CARD_MAP = {card["id"]: card for card in CHARACTER_CARDS}
+_ensure_full_roster_surface_contracts()
 RUNTIME_ASSET_MAP = _runtime_asset_map()
 
 
 def _public_character(card: dict[str, Any]) -> dict[str, Any]:
     psychology, voice = card["psychology"], card["voice"]
+    identity_portrait = str(card.get("portrait") or "")
+    identity_portrait_file = ROOT / "frontend" / "public" / identity_portrait.lstrip("/")
+    concept_portrait = f"/media/selection-anchors/{card['id']}.jpg"
+    concept_portrait_file = ROOT / "frontend" / "public" / concept_portrait.lstrip("/")
+    if identity_portrait and identity_portrait_file.is_file():
+        projected_portrait = identity_portrait
+        portrait_kind = "identity-portrait"
+    elif concept_portrait_file.is_file():
+        projected_portrait = concept_portrait
+        portrait_kind = "mbti-gender-concept-anchor"
+    else:
+        projected_portrait = identity_portrait
+        portrait_kind = "missing-planned-identity"
     card_video = str(card.get("video") or "")
     card_media_status = str(card.get("media", {}).get("status") or "")
     # The original eight cards predate the explicit media object; their
@@ -295,7 +470,8 @@ def _public_character(card: dict[str, Any]) -> dict[str, Any]:
     age = raw_age if isinstance(raw_age, int) and raw_age > 0 else None
     return {
         "id": card["id"], "name": card["names"]["primary"], "mbti": card["mbti"],
-        "tagline": card["tagline"], "accent": card["accent"], "portrait": card["portrait"],
+        "tagline": card["tagline"], "accent": card["accent"], "portrait": projected_portrait,
+        "portraitKind": portrait_kind, "identityPortrait": identity_portrait,
         "video": projected_video, "age": age, "occupation": occupation,
         "gender": card.get("identity", {}).get("gender") or "未公开",
         "mediaStatus": "ready" if projected_video else (card.get("media", {}).get("status") or "planned"),
@@ -329,11 +505,13 @@ def _stable_index(seed: str, namespace: str, size: int) -> int:
 
 
 def select_run_cast(perspective_character_id: str, seed: str) -> list[str]:
-    """Choose one persisted eight-person season from the sixteen-card library.
+    """Choose one persisted eight-person season from the full character library.
 
-    The selected protagonist and their other-gender MBTI counterpart always
-    appear together.  Six more distinct MBTI types are selected with a stable
-    seed, three men and three women, yielding a balanced four/four cast.
+    The protagonist and their other-gender MBTI counterpart always appear
+    together.  Six of the remaining MBTI types are selected deterministically;
+    exactly three contribute their male role and three their female role.  The
+    result is always eight people, four men/four women and seven distinct MBTI
+    types, whether the library contains eight types or the complete sixteen.
     """
     if perspective_character_id not in CHARACTER_CARD_MAP:
         raise ValueError("观察人物不存在")
@@ -347,10 +525,18 @@ def select_run_cast(perspective_character_id: str, seed: str) -> list[str]:
         raise ValueError("该 MBTI 尚未配置另一性别角色")
     counterpart = sorted(same_type, key=lambda card: card["id"])[0]
     other_types = sorted({card["mbti"] for card in CHARACTER_CARDS if card["mbti"] != perspective["mbti"]})
-    omitted = other_types[_stable_index(seed, "omitted-mbti", len(other_types))]
-    included_types = [mbti for mbti in other_types if mbti != omitted]
-    included_types.sort(key=lambda mbti: sha256(f"{seed}:mbti:{mbti}".encode()).hexdigest())
-    male_types = set(included_types[:3])
+    if len(other_types) < 6:
+        raise ValueError("完整一季至少需要七种 MBTI 人格")
+    ranked_types = sorted(
+        other_types,
+        key=lambda mbti: sha256(f"{seed}:cast-type:{mbti}".encode("utf-8")).hexdigest(),
+    )
+    included_types = ranked_types[:6]
+    gender_rank = sorted(
+        included_types,
+        key=lambda mbti: sha256(f"{seed}:cast-gender:{mbti}".encode("utf-8")).hexdigest(),
+    )
+    male_types = set(gender_rank[:3])
     selected = [perspective_character_id, counterpart["id"]]
     for mbti in included_types:
         gender = "男性" if mbti in male_types else "女性"
@@ -773,6 +959,7 @@ def resolve_identity_safe_media(
 
     selected_asset_id = ""
     selected_asset: dict[str, Any] = {}
+    single_perspective_asset_id = ""
     for candidate_id in candidate_ids:
         candidate = asset_map.get(candidate_id, {})
         if not _asset_is_runtime_ready(candidate):
@@ -781,6 +968,25 @@ def resolve_identity_safe_media(
         if set(identity_cast) == set(required_cast) and len(identity_cast) == len(required_cast):
             selected_asset_id, selected_asset = candidate_id, candidate
             break
+
+    # A two-person activity may also have a reviewed reaction insert that keeps
+    # the partner strictly off camera (voice, hands, or an unidentifiable blur).
+    # The exact two-person cut still wins above.  This narrower fallback is only
+    # accepted when the manifest explicitly declares the selected protagonist
+    # as the sole visible identity and opts into the offscreen-partner contract.
+    if not selected_asset_id and routing_mode == "unordered-pair" and participants:
+        proposed_single_id = f"{base_asset_id}--p-{perspective_character_id}"
+        candidate = asset_map.get(proposed_single_id, {})
+        identity_cast = _asset_identity_cast(candidate)
+        if (
+            _asset_is_runtime_ready(candidate)
+            and candidate.get("singlePerspectiveSafe") is True
+            and candidate.get("identityScope") == "single"
+            and candidate.get("leadCharacterId") == perspective_character_id
+            and identity_cast == [perspective_character_id]
+        ):
+            selected_asset_id, selected_asset = proposed_single_id, candidate
+            single_perspective_asset_id = proposed_single_id
 
     # Exact-cast footage above always wins.  A generated rotation clip is only
     # a valid protagonist performance when its anchor is the selected player.
@@ -838,8 +1044,16 @@ def resolve_identity_safe_media(
             "plannedPoster": f"/media/posters/{planned_asset_id}.jpg",
             "available": True,
             "status": "ready",
-            "selectionReason": "approved-gender-rotation" if rotation_asset_id else "reviewed-identity-cast",
-            "routingMode": "gender-rotation" if rotation_asset_id else routing_mode,
+            "selectionReason": (
+                "approved-gender-rotation" if rotation_asset_id
+                else "reviewed-single-perspective-offscreen-partner" if single_perspective_asset_id
+                else "reviewed-identity-cast"
+            ),
+            "routingMode": (
+                "gender-rotation" if rotation_asset_id
+                else "single-perspective-reaction" if single_perspective_asset_id
+                else routing_mode
+            ),
             "rotationSlot": selected_rotation_slot if rotation_asset_id else None,
             "rotationSelectionBucket": list(MEDIA_ROTATION_SELECTION_BUCKETS[selected_rotation_slot]) if rotation_asset_id else None,
             "rotationEventId": rotation.get("eventId") if rotation_asset_id and rotation else None,
@@ -1280,7 +1494,7 @@ def _resolve_heart_message_text(
     if custom:
         if not 2 <= len(custom) <= 100:
             raise ValueError("心动短信请输入 2-100 个字。")
-        if any(term in custom for term in ("DeepSeek", "Agent", "关系数值", "触发事件")):
+        if any(term in custom for term in ("DeepSeek", "Dots", "dots", "Agent", "关系数值", "触发事件")):
             raise ValueError("心动短信不能包含后台状态。")
         return custom, "custom"
     suggestions = heart_message_suggestions(state, character_id)
@@ -1313,7 +1527,7 @@ def _resolve_choice_custom_text(custom_text: str | None) -> str | None:
         return None
     if not 2 <= len(text) <= 160:
         raise ValueError("自定义表达请输入 2-160 个字。")
-    if any(term in text for term in ("DeepSeek", "Agent", "关系数值", "状态补丁", "触发事件", "系统提示词")):
+    if any(term in text for term in ("DeepSeek", "Dots", "dots", "Agent", "关系数值", "状态补丁", "触发事件", "系统提示词")):
         raise ValueError("自定义表达不能包含后台状态。")
     return text
 
@@ -1436,6 +1650,7 @@ def apply_choice(
 
 def _fallback_typed_suggestions(
     snapshot: dict[str, Any], card: dict[str, Any], dialogue: str, player_text: str = "",
+    attitude: str | None = None,
 ) -> list[dict[str, str]]:
     player_id = snapshot["player"]["perspectiveCharacterId"]
     player_name = CHARACTER_MAP[player_id]["name"]
@@ -1443,7 +1658,7 @@ def _fallback_typed_suggestions(
     target_name = card["names"]["primary"]
     stage_copy = {
         "guided-chat": f"{target_name}，要不要和我一起准备今晚的晚餐？我们可以先商量分工。",
-        "team-up": "今晚的晚餐我们一起做吧，你更想负责哪一部分？",
+        "team-up": "今晚一起去厨房准备晚餐吧，你更想负责备菜、饮品还是餐桌？",
         "anonymous-letter": "如果今晚还能发一条短信，我会写：想继续认识你。",
     }.get(node_id, f"我叫{player_name}。回到现在这件事，你愿意告诉我你的想法吗？")
     voice_copy = {
@@ -1471,11 +1686,18 @@ def _fallback_typed_suggestions(
     ))
     if node_id == "guided-chat":
         stage_copy = voiced_mainline
-    return [
+    items = [
         {"type": "followup", "text": followup},
         {"type": "mainline", "text": stage_copy},
         {"type": "deeper", "text": deeper},
     ]
+    surface = _player_suggestion_surface_policy(snapshot, card, dialogue, player_text, attitude)
+    kaomoji = surface.get("fallbackKaomoji")
+    if surface["mayUseKaomoji"] and isinstance(kaomoji, str):
+        # Keep the story-action suggestion maximally legible; one small signal
+        # on the conversational follow-up is enough.
+        items[0]["text"] = f"{items[0]['text']} {kaomoji}"
+    return items
 
 
 def _normalize_agent_suggestions(
@@ -1486,16 +1708,36 @@ def _normalize_agent_suggestions(
     raw = payload.get("suggestions")
     expected_types = ("followup", "mainline", "deeper")
     if raw is None:
-        items = _fallback_typed_suggestions(snapshot, card, dialogue, player_text)
+        items = _fallback_typed_suggestions(
+            snapshot, card, dialogue, player_text, str(payload.get("attitude") or ""),
+        )
     elif isinstance(raw, list) and len(raw) == 3 and all(isinstance(item, str) for item in raw):
         items = [{"type": suggestion_type, "text": str(text)} for suggestion_type, text in zip(expected_types, raw)]
     elif isinstance(raw, list) and len(raw) == 3 and all(isinstance(item, dict) for item in raw):
         by_type = {str(item.get("type") or "").strip(): item for item in raw}
         if set(by_type) != set(expected_types):
-            raise ValueError("DeepSeek 建议语必须包含 followup、mainline、deeper 三类")
+            raise ValueError("模型 建议语必须包含 followup、mainline、deeper 三类")
         items = [{"type": suggestion_type, "text": str(by_type[suggestion_type].get("text") or "")} for suggestion_type in expected_types]
     else:
-        raise ValueError("DeepSeek 建议语必须正好三条")
+        raise ValueError("模型 建议语必须正好三条")
+    items = [
+        {**item, "text": _sanitize_generated_kaomoji(str(item.get("text") or ""))}
+        for item in items
+    ]
+    _validate_suggestion_surface(
+        snapshot, card, items, dialogue, player_text, str(payload.get("attitude") or ""),
+    )
+    surface = _player_suggestion_surface_policy(
+        snapshot, card, dialogue, player_text, str(payload.get("attitude") or ""),
+    )
+    fallback_kaomoji = surface.get("fallbackKaomoji")
+    if (
+        surface["mayUseKaomoji"]
+        and isinstance(fallback_kaomoji, str)
+        and not any(_kaomoji_count(item["text"]) for item in items)
+        and len(items[0]["text"]) + len(fallback_kaomoji) + 1 <= 72
+    ):
+        items[0]["text"] = f"{items[0]['text']} {fallback_kaomoji}"
     normalized, seen = [], set()
     player_name = CHARACTER_MAP[snapshot["player"]["perspectiveCharacterId"]]["name"]
     player_card = CHARACTER_CARD_MAP[snapshot["player"]["perspectiveCharacterId"]]
@@ -1507,16 +1749,16 @@ def _normalize_agent_suggestions(
         suggestion_type = item["type"]
         text = item["text"].strip()
         if not 4 <= len(text) <= 72 or text in seen:
-            raise ValueError("DeepSeek 建议语重复或长度不符合合同")
-        if any(term in text for term in (*MECHANICAL_COPY_TERMS, "关系数值", "写入记忆", "触发事件", "DeepSeek", "Agent", "API")):
-            raise ValueError("DeepSeek 建议语暴露后台或使用机械表达")
+            raise ValueError("模型 建议语重复或长度不符合合同")
+        if any(term in text for term in (*MECHANICAL_COPY_TERMS, "关系数值", "写入记忆", "触发事件", "DeepSeek", "Dots", "dots", "Agent", "API")):
+            raise ValueError("模型 建议语暴露后台或使用机械表达")
         if any(term in text for term in ("带的那台旧相机", "节目组秘密", "桌签", "线索", "地图", "钥匙")):
-            raise ValueError("DeepSeek 建议语把未来兴趣或隐藏信息写成了已发生事实")
+            raise ValueError("模型 建议语把未来兴趣或隐藏信息写成了已发生事实")
         for claimed_name in re.findall(r"我叫([\u4e00-\u9fff·]{2,8})", text):
             if claimed_name != player_name:
-                raise ValueError("DeepSeek 建议语替主角编造了错误姓名")
+                raise ValueError("模型 建议语替主角编造了错误姓名")
         if unknown_player_job and re.search(r"我(?:是|在|做).{0,12}(?:工作|职业|行业|相关)", text):
-            raise ValueError("DeepSeek 建议语替主角编造了职业")
+            raise ValueError("模型 建议语替主角编造了职业")
         if suggestion_type == "followup":
             link_markers = ("刚才", "你说", "你问", "这句话", "你提到", "你刚刚", "你说的")
             if not any(marker in text for marker in link_markers):
@@ -1587,13 +1829,39 @@ def detect_repetitive_agent_reply(snapshot: dict[str, Any], character_id: str, d
 
 
 def validate_agent_turn(
-    card: dict[str, Any], payload: dict[str, Any], snapshot: dict[str, Any] | None = None, player_text: str = "",
+    card: dict[str, Any],
+    payload: dict[str, Any],
+    snapshot: dict[str, Any] | None = None,
+    player_text: str = "",
+    *,
+    provider: str | None = None,
 ) -> dict[str, Any]:
     dialogue = str(payload.get("dialogue") or "").strip()
     if not 8 <= len(dialogue) <= 240:
-        raise ValueError("DeepSeek 角色台词长度不符合合同")
+        raise ValueError("模型 角色台词长度不符合合同")
     if any(term in dialogue for term in MECHANICAL_COPY_TERMS):
-        raise ValueError("DeepSeek 角色台词使用了通用机械表达")
+        raise ValueError("模型 角色台词使用了通用机械表达")
+    allowed_latin_tokens = {
+        "MBTI", "INTJ", "INTP", "ENTJ", "ENTP", "INFJ", "INFP", "ENFJ", "ENFP",
+        "ISTJ", "ISFJ", "ESTJ", "ESFJ", "ISTP", "ISFP", "ESTP", "ESFP",
+    }
+    # Several R9 guests use their real fictional European names in otherwise
+    # Mandarin dialogue.  Treat only the current card's authored name tokens as
+    # legitimate; this keeps the anti-English filler gate strict without making
+    # Elena/Luca/etc. unable to introduce themselves.
+    for authored_name in [
+        card.get("names", {}).get("primary"),
+        *(card.get("names", {}).get("aliases") or []),
+    ]:
+        allowed_latin_tokens.update(
+            token.upper() for token in re.findall(r"[A-Za-z]{3,}", str(authored_name or ""))
+        )
+    unnecessary_english = [
+        token for token in re.findall(r"[A-Za-z]{3,}", dialogue)
+        if token.upper() not in allowed_latin_tokens
+    ]
+    if unnecessary_english:
+        raise ValueError("模型 角色台词夹杂了不必要的英文单词")
     ai_summary_patterns = (
         r"听起来你(?:似乎|好像|可能)",
         r"我能(?:感受|感觉)到",
@@ -1601,14 +1869,14 @@ def validate_agent_turn(
         r"我理解你的感受",
     )
     if any(re.search(pattern, dialogue) for pattern in ai_summary_patterns):
-        raise ValueError("DeepSeek 角色台词先总结或命名玩家情绪，出现明显 AI 味")
+        raise ValueError("模型 角色台词先总结或命名玩家情绪，出现明显 AI 味")
     if any(term in dialogue for term in ("如果你愿意，我可以", "要不要我帮你分析", "你的感受是合理的")):
-        raise ValueError("DeepSeek 角色台词使用了客服或心理咨询式收尾")
+        raise ValueError("模型 角色台词使用了客服或心理咨询式收尾")
     disfluency_count = dialogue.count("……") + dialogue.count("...") + sum(
         dialogue.count(term) for term in ("那个，就是", "就那种，怎么说", "怎么说呢")
     )
     if disfluency_count > 2:
-        raise ValueError("DeepSeek 角色台词机械堆叠停顿或口头语")
+        raise ValueError("模型 角色台词机械堆叠停顿或口头语")
     if snapshot:
         character_id = card["id"]
         repeat_reason = detect_repetitive_agent_reply(snapshot, character_id, dialogue)
@@ -1628,7 +1896,22 @@ def validate_agent_turn(
             r"(?:清晨|早上|上午).{0,4}(?:晚餐|晚饭|夜宵)",
         )
         if any(re.search(pattern, dialogue) for pattern in impossible_time_pairs):
-            raise ValueError("DeepSeek 角色台词出现了明显时间矛盾")
+            raise ValueError("模型 角色台词出现了明显时间矛盾")
+        flavor_node = snapshot.get("scriptFlavor", {}).get("nodes", {}).get(snapshot.get("nodeId"), {})
+        grounding_text = json.dumps(flavor_node, ensure_ascii=False) + player_text + json.dumps(
+            [
+                {"summary": item.get("summary"), "agentReply": item.get("agentReply")}
+                for item in snapshot.get("echoMemories", [])[-6:]
+                if item.get("characterId") == character_id
+            ],
+            ensure_ascii=False,
+        )
+        invented_fault = re.search(
+            r"(?:灯架|挂钩|门锁|门框|椅子|轮子|水龙头|插座|电线|行李箱).{0,12}(?:松|晃|卡住|坏了|漏水|断了|故障)",
+            dialogue,
+        )
+        if invented_fault and not any(term in grounding_text for term in ("松", "晃", "卡住", "坏了", "漏水", "断了", "故障")):
+            raise ValueError("模型 角色台词编造了当前场景没有的设施故障")
         first_conversation = not any(item.get("characterId") == character_id for item in snapshot.get("echoMemories", []))
         if card.get("identity", {}).get("gender") == "男性" and not first_conversation:
             if dialogue.count("？") + dialogue.count("?") > 1:
@@ -1649,37 +1932,37 @@ def validate_agent_turn(
                 "昨天", "前几天", "这几天", "桌签", "节目组秘密", "节目组说", "线索", "地图", "钥匙", "共同经历", "天台",
             )
             if any(term in dialogue for term in impossible_first_meeting) or re.search(r"(?:已经|连续|数了).{0,6}[一二三四五六七八九十\d]+天", dialogue):
-                raise ValueError("DeepSeek 首聊台词编造了尚未发生的时间或节目事实")
+                raise ValueError("模型 首聊台词编造了尚未发生的时间或节目事实")
             if card["names"]["primary"] not in dialogue:
-                raise ValueError("DeepSeek 首聊没有直接介绍角色姓名")
+                raise ValueError("模型 首聊没有直接介绍角色姓名")
             if card["mbti"] not in dialogue:
-                raise ValueError("DeepSeek 首聊没有清楚介绍 MBTI 或性格")
+                raise ValueError("模型 首聊没有清楚介绍 MBTI 或性格")
             if not any(anchor in dialogue for anchor in INTRO_BACKGROUND_ANCHORS[character_id]):
-                raise ValueError("DeepSeek 首聊没有介绍人物卡允许公开的工作或日常背景")
-            if not any(marker in dialogue for marker in ("来这里", "参加", "这次", "这七天")):
-                raise ValueError("DeepSeek 首聊没有说清参加节目的来意")
+                raise ValueError("模型 首聊没有介绍人物卡允许公开的工作或日常背景")
+            if not any(marker in dialogue for marker in ("来这里", "来这儿", "来这个节目", "上这个节目", "参加", "这次", "这七天", "到这里")):
+                raise ValueError("模型 首聊没有说清参加节目的来意")
             if re.search(r"(?:来这里|来参加|这次来|这七天).{0,32}(?:想|主要).{0,16}(?:修|破解|赢|找出)", dialogue):
-                raise ValueError("DeepSeek 首聊把人物任务写成了参加恋综的主要原因")
+                raise ValueError("模型 首聊把人物任务写成了参加恋综的主要原因")
             if any(term in stage_direction for term in ("录音笔", "旧相机", "插画本", "工具箱")):
-                raise ValueError("DeepSeek 首聊动作新增了当前现场没有的随身道具")
+                raise ValueError("模型 首聊动作新增了当前现场没有的随身道具")
             if any(term in dialogue for term in ("你猜", "猜我", "秘密", "以后会知道", "先看你怎么回答", "试探")):
-                raise ValueError("DeepSeek 首聊使用了谜语或抽象试探")
+                raise ValueError("模型 首聊使用了谜语或抽象试探")
             if character_id == "jiangmi" and any(
                 term in dialogue for term in ("做一组录音", "收集七天", "听大家的故事", "还没被播放", "像一段录音")
             ):
-                raise ValueError("DeepSeek 首聊把姜米写成了录音任务或谜语")
+                raise ValueError("模型 首聊把姜米写成了录音任务或谜语")
             occupation = card.get("sourceProfile", {}).get("facts", {}).get("occupation")
             unknown_job = not isinstance(occupation, str) or any(
                 term in occupation for term in ("待剧情", "待正式确认", "运行时职业待")
             )
             if unknown_job and re.search(r"(?:我是|职业是|工作是|从事).{0,12}(?:师|员|经理|博主|策划|工程|设计|工作|行业)", dialogue):
-                raise ValueError("DeepSeek 首聊替角色编造了未确认职业")
+                raise ValueError("模型 首聊替角色编造了未确认职业")
     attitude = str(payload.get("attitude") or "").strip()
     if attitude not in ATTITUDES:
-        raise ValueError("DeepSeek 返回了未允许的角色态度")
+        raise ValueError("模型 返回了未允许的角色态度")
     intent_id = str(payload.get("intentId") or "").strip()
     if intent_id not in card["agentPolicy"]["allowedIntentIds"]:
-        raise ValueError("DeepSeek 返回了未允许的角色意图")
+        raise ValueError("模型 返回了未允许的角色意图")
     raw_delta, bounds, delta = payload.get("relationshipDelta") or {}, card["agentPolicy"]["deltaBounds"], {}
     for axis in RELATIONSHIP_AXES:
         try: value = int(raw_delta.get(axis, 0))
@@ -1714,13 +1997,19 @@ def validate_agent_turn(
         "proposedEventId": event_id or None,
         "suggestions": suggestions,
         "suggestedPrompts": [item["text"] for item in suggestions],
-        "suggestionsSource": "deepseek" if payload.get("suggestions") is not None else "engine-fallback",
+        "suggestionsSource": (
+            "engine-fallback"
+            if payload.get("suggestions") is None or payload.get("suggestionsSource") == "engine-fallback"
+            else (provider or "llm")
+        ),
     }
 
 
 def commit_agent_turn(
     snapshot: dict[str, Any], character_id: str, player_text: str, payload: dict[str, Any],
     conversation_context: dict[str, Any] | None = None,
+    *,
+    provider: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     if character_id not in CHARACTER_CARD_MAP: raise ValueError("这位嘉宾不在心动小屋。")
     state = migrate_snapshot(snapshot); assert state is not None
@@ -1739,7 +2028,10 @@ def commit_agent_turn(
     )
     if character_id not in context["participantIds"]:
         raise ValueError("当前嘉宾不在这段对话的参与者名单中。")
-    turn, axes = validate_agent_turn(card, payload, state, player_text), state["relationships"][character_id]
+    generation_provider = str(provider or "llm").strip().lower()
+    turn, axes = validate_agent_turn(
+        card, payload, state, player_text, provider=generation_provider,
+    ), state["relationships"][character_id]
     cold_start = not any(axes.values()) and not any(item.get("characterId") == character_id for item in state["echoMemories"])
     if cold_start:
         turn["relationshipDelta"] = {axis: max(-1, min(1, delta)) for axis, delta in turn["relationshipDelta"].items()}
@@ -1764,6 +2056,7 @@ def commit_agent_turn(
         "time": context["time"], "locationId": context["locationId"], "locationName": context["locationName"],
         "participantIds": context["participantIds"], "participantNames": context["participantNames"],
         "channel": context["channel"], "conversationId": context["conversationId"],
+        "llmProvider": generation_provider,
         "suggestions": turn["suggestions"], "suggestedPrompts": turn["suggestedPrompts"], "suggestionsSource": turn["suggestionsSource"],
         "relationshipDelta": committed_delta, "affectionDelta": committed_delta["affection"], "trustDelta": committed_delta["trust"],
         "createdAt": utc_now(), "callbackEligible": True, "callbackAfterEventIds": [policy["eventId"]] if activated_event else []
@@ -1785,6 +2078,7 @@ def commit_agent_turn(
         "channel": context["channel"], "participantIds": context["participantIds"],
         "participantNames": context["participantNames"],
         "playerText": player_text[:240], "agentReply": turn["dialogue"],
+        "llmProvider": generation_provider,
         "topicSummary": turn["topicSummary"], "summary": turn["memory"]["summary"],
         "createdAt": memory["createdAt"],
     }
@@ -1814,7 +2108,7 @@ def commit_agent_turn(
             guided_completed = True
         state["pendingInteraction"] = pending
     state["revision"] += 1; state["updatedAt"] = utc_now()
-    receipt = {"id": memory_id, "kind": "agent-turn", "intentId": turn["intentId"], "attitude": turn["attitude"], "publicReason": turn["publicReason"], "patch": {f"relationships.{character_id}.{axis}": delta for axis, delta in committed_delta.items() if delta}, "eventActivation": activated_event, "suggestions": turn["suggestions"], "suggestedPrompts": turn["suggestedPrompts"], "suggestionsSource": turn["suggestionsSource"], "context": context, "committedAt": memory["createdAt"]}
+    receipt = {"id": memory_id, "kind": "agent-turn", "intentId": turn["intentId"], "attitude": turn["attitude"], "publicReason": turn["publicReason"], "patch": {f"relationships.{character_id}.{axis}": delta for axis, delta in committed_delta.items() if delta}, "eventActivation": activated_event, "suggestions": turn["suggestions"], "suggestedPrompts": turn["suggestedPrompts"], "suggestionsSource": turn["suggestionsSource"], "llmProvider": generation_provider, "context": context, "committedAt": memory["createdAt"]}
     receipt["guidedInteractionCompleted"] = guided_completed
     return state, receipt
 
@@ -1852,6 +2146,27 @@ def _project_script_flavor(state: dict[str, Any], node: dict[str, Any]) -> dict[
             if state["nodeId"] in {"cast-first-impressions", "icebreaker-choice"}:
                 choice["characterId"] = target_id
     return node
+
+
+def _public_snapshot(state: dict[str, Any]) -> dict[str, Any]:
+    """Keep internal model provenance while exposing provider names only."""
+    public_state = deepcopy(state)
+    flavor = public_state.get("scriptFlavor")
+    if isinstance(flavor, dict):
+        generator = flavor.get("generator")
+        if isinstance(generator, dict):
+            flavor["generator"] = {"provider": str(generator.get("provider") or "")}
+        contextual_nodes = flavor.get("contextualNodes")
+        if isinstance(contextual_nodes, dict):
+            for evidence in contextual_nodes.values():
+                if not isinstance(evidence, dict):
+                    continue
+                contextual_generator = evidence.get("generator")
+                if isinstance(contextual_generator, dict):
+                    evidence["generator"] = {
+                        "provider": str(contextual_generator.get("provider") or ""),
+                    }
+    return public_state
 
 
 def project_view(snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -1938,6 +2253,6 @@ def project_view(snapshot: dict[str, Any]) -> dict[str, Any]:
     heart_mailbox["receivedCount"] = len(heart_mailbox.get("received", []))
     heart_mailbox["unreadCount"] = len(heart_mailbox.get("received", [])) if state["nodeId"] == "callback" else 0
     return {
-        "snapshot": state, "node": node, "characters": projected_characters, "mediaContext": media_context,
+        "snapshot": _public_snapshot(state), "node": node, "characters": projected_characters, "mediaContext": media_context,
         "chatContexts": available_chat_contexts(state), "heartMailbox": heart_mailbox,
     }

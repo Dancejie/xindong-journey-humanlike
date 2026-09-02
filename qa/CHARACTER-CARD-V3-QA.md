@@ -1,8 +1,8 @@
-# 人物卡 v3 本地研究与生成 QA
+# 人物卡 v3.0 历史研究与生成 QA
 
 ## 结论
 
-8 张人物卡已升级为 `3.0.0-local-research`，并通过本地结构测试与 DeepSeek 实际生成测试。本轮没有部署、没有写线上数据库，也没有把 Key 写进代码或产物。
+本文记录首批 8 张人物卡在 `3.0.0-local-research` 阶段的历史 QA，不能代表当前完整角色库。当前版本为 `3.4.0-distinct-character-cores`，包含 32 张卡、完整 16 种 MBTI、每型一男一女；当前同型男女区分门禁见 [`R9-CHARACTER-DISTINCTION-QA.md`](R9-CHARACTER-DISTINCTION-QA.md)。本历史轮没有部署、没有写线上数据库，也没有把 Key 写进代码或产物。
 
 ## 证据分层
 
@@ -47,7 +47,7 @@
 - [The Three Musketeers](https://www.gutenberg.org/ebooks/1257)
 - [The Mysterious Island](https://www.gutenberg.org/ebooks/8993)
 
-## DeepSeek 样片验收
+## DeepSeek 历史 8 人样片验收
 
 - 同一句玩家输入成功生成 8 个结构化回合；
 - 8/8 通过对白长度、态度白名单、意图白名单、七轴范围、记忆结构和事件白名单校验；
@@ -57,4 +57,4 @@
 
 ## 当前边界
 
-这版仍是 `local-research-candidate`，不是最终角色圣经。下一轮最有价值的是选 2-3 个角色做三回合连续对话，检查他们是否能在记忆回收后继续保持差异，而不是只看单轮金句。
+这份 8 人样片是 `local-research-candidate` 历史证据，不能外推成当前 32 人都经过 DeepSeek 实模验收。当前 32 卡版本另外通过结构、同型字段差异、人物门禁和运行时绑定测试；后续仍应选跨文化与同型异性角色做三回合连续盲测，检查记忆回收后的差异，而不是只看单轮金句。

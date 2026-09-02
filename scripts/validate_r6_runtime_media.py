@@ -3,7 +3,10 @@
 
 This validator is intentionally independent from the historical 25-file R4
 gate.  R6 coverage means four approved event rotations for every authored
-event plus one silent dynamic portrait for every playable character.
+event plus the eight portraits promoted in that release. Later roster and
+delivery-profile releases may add portraits or encode lightweight runtime
+derivatives; those additions must not invalidate the historical R6 source
+provenance contract.
 """
 
 from __future__ import annotations
@@ -134,17 +137,31 @@ def main() -> int:
         str(card.get("id")) for card in cards
         if isinstance(card, dict) and card.get("id")
     }
-    if len(card_ids) != 16:
-        failures.append(f"expected 16 playable character cards, found {len(card_ids)}")
-    expected_portrait_ids = {f"CHAR-{character_id}-portrait" for character_id in card_ids}
+    if len(card_ids) != 32:
+        failures.append(f"expected expanded 32-card directory, found {len(card_ids)}")
     actual_portrait_ids = {
         asset_id for asset_id, asset in assets.items() if asset.get("kind") == "dynamic-portrait"
     }
-    if actual_portrait_ids != expected_portrait_ids:
+    covered_card_ids = {
+        asset_id.removeprefix("CHAR-").removesuffix("-portrait")
+        for asset_id in actual_portrait_ids
+        if asset_id.startswith("CHAR-") and asset_id.endswith("-portrait")
+    }
+    malformed_portrait_ids = sorted(
+        asset_id for asset_id in actual_portrait_ids
+        if not (asset_id.startswith("CHAR-") and asset_id.endswith("-portrait"))
+    )
+    if malformed_portrait_ids:
+        failures.append(f"malformed dynamic portrait IDs: {malformed_portrait_ids}")
+    if len(actual_portrait_ids) != 32 or len(covered_card_ids) != 32:
         failures.append(
-            f"portrait inventory mismatch: missing={sorted(expected_portrait_ids - actual_portrait_ids)}, "
-            f"extra={sorted(actual_portrait_ids - expected_portrait_ids)}"
+            f"current identity-media coverage must contain 32 complete dynamic portraits, "
+            f"got assets={len(actual_portrait_ids)} characters={len(covered_card_ids)}"
         )
+    unknown_covered_ids = sorted(covered_card_ids - card_ids)
+    if unknown_covered_ids:
+        failures.append(f"dynamic portraits reference unknown character cards: {unknown_covered_ids}")
+    planned_no_media_ids = card_ids - covered_card_ids
 
     allowlist_items = {
         str(item.get("sourceId")): item for item in allowlist.get("approvedAssets", [])
@@ -166,7 +183,27 @@ def main() -> int:
         runtime_asset = assets.get(asset_id) or {}
         promoted_runtime_ids.add(asset_id)
         source_types[str(manifest_asset.get("sourceType") or "")] += 1
-        if runtime_asset != manifest_asset:
+        derivative = runtime_asset.get("runtimeDerivative") if isinstance(runtime_asset.get("runtimeDerivative"), dict) else {}
+        if derivative:
+            if derivative.get("profile") != "render-mobile-lite-r10":
+                failures.append(f"unexpected runtime derivative profile: {asset_id}")
+                continue
+            if derivative.get("sourceSha256") != manifest_asset.get("sha256"):
+                failures.append(f"runtime derivative source SHA drifted from R6 promotion: {asset_id}")
+                continue
+            immutable_keys = {
+                "id", "path", "kind", "status", "sourceId", "sourceType",
+                "baseAssetId", "rotationSlot", "leadGender", "leadCharacterId",
+                "identityCast", "identityScope", "qaVerdict", "visualQa", "visualQaEvidence",
+            }
+            drifted = sorted(
+                key for key in immutable_keys
+                if key in manifest_asset and runtime_asset.get(key) != manifest_asset.get(key)
+            )
+            if drifted:
+                failures.append(f"runtime derivative metadata drifted for {asset_id}: {drifted}")
+                continue
+        elif runtime_asset != manifest_asset:
             failures.append(f"runtime manifest record drifted from applied promotion: {asset_id}")
             continue
         source_id = str(manifest_asset.get("sourceId") or "")
@@ -183,7 +220,8 @@ def main() -> int:
     if promoted_runtime_ids != expected_promoted_ids:
         failures.append("applied promotion does not map to the expected 100 events + 8 new portraits")
 
-    for asset_id in sorted(expected_event_ids | expected_portrait_ids):
+    expected_promoted_portrait_ids = promoted_runtime_ids - expected_event_ids
+    for asset_id in sorted(expected_event_ids | expected_promoted_portrait_ids):
         asset = assets.get(asset_id)
         if not asset:
             continue
@@ -230,6 +268,9 @@ def main() -> int:
 
     summary = {
         "verdict": "R6_RUNTIME_MEDIA_PASS" if not failures else "R6_RUNTIME_MEDIA_FAIL",
+        "characterCards": len(card_ids),
+        "mediaCoveredCharacters": len(covered_card_ids),
+        "plannedNoMediaCharacters": len(planned_no_media_ids),
         "eventRotations": len(actual_event_ids),
         "dynamicPortraits": len(actual_portrait_ids),
         "promotedAssets": len(promoted),

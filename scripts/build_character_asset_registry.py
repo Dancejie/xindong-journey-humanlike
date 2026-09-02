@@ -27,6 +27,14 @@ OUTPUT_PATH = ROOT / "media" / "character-asset-registry.v1.json"
 # Sequence codes are deliberately explicit.  Inserting a new story event must
 # not silently renumber published asset identities.
 EVENT_SPECS: dict[str, dict[str, str]] = {
+    "E01-arrival-reveal": {
+        "sequence": "090", "action": "reveal-arrival-cast", "actionLabel": "抵达嘉宾揭晓",
+        "scene": "seaside-villa-terrace", "sceneLabel": "海边小屋露台",
+    },
+    "E01-anonymous-letter": {
+        "sequence": "091", "action": "hold-anonymous-letter", "actionLabel": "匿名信物件留白",
+        "scene": "candlelit-letter-table", "sceneLabel": "烛光信件桌",
+    },
     "D1-A1-island-hotel-establish": {
         "sequence": "101", "action": "arrive-island-hotel", "actionLabel": "抵达海岛酒店",
         "scene": "island-hotel-exterior", "sceneLabel": "海岛酒店外景",
@@ -275,6 +283,8 @@ def main() -> int:
         runtime_path = character["portraitRuntimePath"]
         source_path = f"frontend/public{runtime_path}"
         file_path = ROOT / source_path
+        if not file_path.is_file():
+            continue
         media = probe_media(file_path)
         asset_id, canonical, display = make_name(
             character, "000", "identity-anchor", "人物定妆照", "audit", "审核锚点", "jpg",
@@ -378,7 +388,7 @@ def main() -> int:
         manifest_audio = runtime.get("audio") if isinstance(runtime.get("audio"), dict) else {}
         rights = rights_for(source_id, r6_shots)
         audio_mode = manifest_audio.get("mode") or ("silent-loop" if not media["audio"]["hasAudio"] else "embedded")
-        assets.append({
+        registry_asset = {
             "assetId": asset_id,
             "canonicalFilename": canonical,
             "displayName": display,
@@ -413,7 +423,44 @@ def main() -> int:
                 "sourceId": source_id,
                 "promptPath": runtime.get("generationPromptFile"),
             },
-        })
+        }
+        for field in (
+            "runtimeIntegrationStatus",
+            "qaVerdict",
+            "contractVerdict",
+            "runtimeReferences",
+        ):
+            if field == "qaVerdict" and not runtime.get("runtimeReferences"):
+                continue
+            if runtime.get(field) is not None:
+                registry_asset[field] = runtime[field]
+        assets.append(registry_asset)
+
+    static_counts = Counter(
+        str(asset.get("characterId")) for asset in assets
+        if asset.get("mediaType") == "image" and asset.get("sequence") == "000"
+    )
+    dynamic_counts = Counter(
+        str(asset.get("characterId")) for asset in assets
+        if asset.get("mediaType") == "video" and asset.get("sequence") == "001"
+    )
+    for character in directory:
+        character_id = character["characterId"]
+        static_count = static_counts[character_id]
+        dynamic_count = dynamic_counts[character_id]
+        if static_count == 1 and dynamic_count == 1:
+            status = "runtime-identity-covered"
+        elif static_count == 1 and dynamic_count == 0:
+            status = "runtime-static-only-held-dynamic"
+        elif static_count == 0 and dynamic_count == 0:
+            status = "planned-no-runtime-identity-media"
+        else:
+            status = "partial-invalid"
+        character["mediaCoverage"] = {
+            "status": status,
+            "staticPortraitAssetCount": static_count,
+            "dynamicPortraitAssetCount": dynamic_count,
+        }
 
     counts = Counter(asset["mediaType"] for asset in assets)
     kind_counts = Counter(
@@ -439,6 +486,18 @@ def main() -> int:
         },
         "summary": {
             "characters": len(directory),
+            "mediaCoveredCharacters": sum(
+                item["mediaCoverage"]["status"] == "runtime-identity-covered"
+                for item in directory
+            ),
+            "staticOnlyHeldCharacters": sum(
+                item["mediaCoverage"]["status"] == "runtime-static-only-held-dynamic"
+                for item in directory
+            ),
+            "plannedNoMediaCharacters": sum(
+                item["mediaCoverage"]["status"] == "planned-no-runtime-identity-media"
+                for item in directory
+            ),
             "assets": len(assets),
             "images": counts["image"],
             "videos": counts["video"],

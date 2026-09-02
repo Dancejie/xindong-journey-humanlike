@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Call DeepSeek locally with every v3 card and produce a compact flavor report."""
+"""Call the selected local LLM with v3 cards and produce a compact flavor report."""
 from __future__ import annotations
 
 import argparse
@@ -24,37 +24,21 @@ from backend.game_content import (  # noqa: E402
     create_snapshot,
     validate_agent_turn,
 )
+from backend.llm_provider import call_text, provider_config  # noqa: E402
+from scripts.llm_env import load_local_llm_env  # noqa: E402
 
 
 DEFAULT_INPUT = "我不想听节目里的标准答案。告诉我，你为什么还留在这里？如果现在只能做一件真事，你会做什么？"
 
 
-def load_env(path: Path) -> dict[str, str]:
-    values: dict[str, str] = {}
-    if not path.exists():
-        return values
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        values[key.strip()] = value.strip().strip('"').strip("'")
-    return values
-
-
-async def request_turn(client: httpx.AsyncClient, semaphore: asyncio.Semaphore, card: dict, snapshot: dict, player_input: str, api_key: str, base_url: str, model: str) -> dict:
+async def request_turn(client: httpx.AsyncClient, semaphore: asyncio.Semaphore, card: dict, snapshot: dict, player_input: str, provider: str) -> dict:
     async with semaphore:
         messages = build_agent_messages(card, snapshot, player_input)
         validated = None
         for attempt in range(2):
-            response = await client.post(
-                f"{base_url.rstrip('/')}/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json={"model": model, "messages": messages, "max_tokens": 760, "stream": False, "thinking": {"type": "disabled"}},
-            )
-            response.raise_for_status()
-            choices = response.json().get("choices") or []
-            raw = str(choices[0].get("message", {}).get("content") or "").strip() if choices else ""
+            raw = (await call_text(
+                messages, max_tokens=760, provider=provider, client=client,
+            )).text
             payload = extract_json(raw)
             try:
                 validated = validate_agent_turn(card, payload, snapshot, player_input)
@@ -85,12 +69,14 @@ async def request_turn(client: httpx.AsyncClient, semaphore: asyncio.Semaphore, 
         }
 
 
-def markdown_report(results: list[dict], player_input: str, model: str) -> str:
+def markdown_report(results: list[dict], player_input: str, provider: str, model: str) -> str:
     generated = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+    provider_label = {"deepseek": "DeepSeek", "dots": "Dots"}[provider]
     lines = [
-        "# DeepSeek 人物对白风味样片（本地）",
+        f"# {provider_label} 人物对白风味样片（本地）",
         "",
         f"- 生成时间：{generated}",
+        f"- 供应商：`{provider}`",
         f"- 模型：`{model}`",
         "- 人物卡：`content/character_cards.v3.json`",
         f"- 同一玩家输入：{player_input}",
@@ -133,12 +119,16 @@ def markdown_report(results: list[dict], player_input: str, model: str) -> str:
 
 
 async def run(args: argparse.Namespace) -> int:
-    env = {**load_env(Path(args.env_file)), **os.environ}
-    api_key = env.get("DEEPSEEK_API_KEY", "").strip()
-    if not api_key:
-        raise SystemExit("DEEPSEEK_API_KEY 未配置")
-    base_url = env.get("DEEPSEEK_API_BASE", "https://api.deepseek.com")
-    model = env.get("DEEPSEEK_MODEL", "deepseek-v4-flash")
+    try:
+        load_local_llm_env(ROOT, args.env_file)
+    except FileNotFoundError as error:
+        raise SystemExit(str(error)) from error
+    if args.provider:
+        os.environ["LLM_PROVIDER"] = args.provider
+    try:
+        config = provider_config()
+    except RuntimeError as error:
+        raise SystemExit(str(error)) from error
     snapshot = create_snapshot(args.player_mbti, args.player_character or None)
     cards = [card for card in CHARACTER_CARDS if not args.character or card["id"] in args.character]
     active_ids = set(active_cast_ids(snapshot))
@@ -199,23 +189,24 @@ async def run(args: argparse.Namespace) -> int:
     semaphore = asyncio.Semaphore(max(1, min(args.concurrency, 2)))
     async with httpx.AsyncClient(timeout=90) as client:
         jobs = [
-            request_turn(client, semaphore, card, scene_snapshot, args.player_input, api_key, base_url, model)
+            request_turn(client, semaphore, card, scene_snapshot, args.player_input, config.name)
             for card, scene_snapshot in zip(cards, scene_snapshots)
         ]
         results = await asyncio.gather(*jobs)
-    output = Path(args.output)
+    output = Path(args.output) if args.output else ROOT / "qa" / f"{config.name.upper()}-CHARACTER-FLAVOR.md"
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(markdown_report(results, args.player_input, model), encoding="utf-8")
+    output.write_text(markdown_report(results, args.player_input, config.name, config.model), encoding="utf-8")
     json_output = output.with_suffix(".json")
-    json_output.write_text(json.dumps({"model": model, "playerInput": args.player_input, "results": results}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    json_output.write_text(json.dumps({"provider": config.name, "model": config.model, "playerInput": args.player_input, "results": results}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"generated {len(results)} validated turns -> {output}")
     return 0
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--env-file", default=str(ROOT / ".env.deepseek.local"))
-    parser.add_argument("--output", default=str(ROOT / "qa" / "DEEPSEEK-CHARACTER-FLAVOR.md"))
+    parser.add_argument("--env-file")
+    parser.add_argument("--provider", choices=("deepseek", "dots"))
+    parser.add_argument("--output")
     parser.add_argument("--player-input", default=DEFAULT_INPUT)
     parser.add_argument("--player-mbti", default="INFP")
     parser.add_argument("--player-character")

@@ -9,6 +9,8 @@ type Character = {
   independentInterest: string; eventLabel: string
   age?: number | string; occupation?: string; publicFacts?: { occupation?: string; publicPersona?: string }
   gender?: '男性' | '女性' | string; mediaStatus?: 'ready' | 'planned' | string; mediaFallbackKind?: string
+  portraitKind?: 'identity-portrait' | 'mbti-gender-concept-anchor' | 'missing-planned-identity' | string
+  identityPortrait?: string
   opener?: ChatOpener | string; openingLine?: string; suggestedPrompts?: ChatSuggestionInput[]
   isPlayerPerspective?: boolean; chatEnabled?: boolean; isGuidedTarget?: boolean
   location?: string; availableAtLocations?: string[]; groupChatEnabled?: boolean
@@ -92,6 +94,7 @@ type ChatOpener = {
 type ChatOpenerPayload = {
   opener?: ChatOpener | string; openingLine?: string; stageDirection?: string
   dialogue?: string; line?: string; suggestedPrompts?: ChatSuggestionInput[]; prompts?: ChatSuggestionInput[]; suggestions?: ChatSuggestionInput[]
+  llmProvider?: LlmProvider | null; generationSource?: string
 }
 
 type Snapshot = {
@@ -142,6 +145,33 @@ type View = {
   chatContexts?: ChatContexts
 }
 type Receipt = { kind: string; intentId?: string; attitude?: string; publicReason?: string; patch?: Record<string, unknown>; eventActivation?: StoryEvent | null; mission?: StoryMission; title?: string; playerMissionPrompt?: string }
+
+type LlmProvider = 'deepseek' | 'dots'
+type LlmProviderConfig = {
+  default?: string
+  current?: string
+  available?: string[]
+}
+
+const LLM_PROVIDER_STORAGE_KEY = 'heart-journey-llm-provider'
+const LLM_PROVIDER_LABELS: Record<LlmProvider, string> = { deepseek: 'DeepSeek', dots: 'Dots' }
+
+function normalizeLlmProvider(value: unknown): LlmProvider | null {
+  return value === 'deepseek' || value === 'dots' ? value : null
+}
+
+function storedLlmProvider(): LlmProvider | null {
+  try { return normalizeLlmProvider(localStorage.getItem(LLM_PROVIDER_STORAGE_KEY)) }
+  catch { return null }
+}
+
+let activeLlmProvider = storedLlmProvider()
+
+function setActiveLlmProvider(provider: LlmProvider) {
+  activeLlmProvider = provider
+  try { localStorage.setItem(LLM_PROVIDER_STORAGE_KEY, provider) }
+  catch { /* Private browsing can deny storage; the in-memory choice still works. */ }
+}
 
 const PROGRESS: Record<string, number> = { 'arrival-context': 6, 'villa-arrival': 18, introductions: 32, 'cast-first-impressions': 41, 'icebreaker-choice': 49, 'guided-chat': 62, 'team-up': 76, 'anonymous-letter': 89, callback: 100, arrival: 8, 'first-look': 26, 'private-window': 48, 'event-reveal': 68 }
 const ATTITUDE_LABELS: Record<string, string> = { warm: '温暖', curious: '好奇', guarded: '戒备', challenging: '试探', vulnerable: '袒露', softened: '松动', uncertain: '迟疑', honest: '坦诚', moved: '被触动', careful: '谨慎', steady: '稳定', boundary: '边界' }
@@ -249,13 +279,57 @@ function getClientId() {
 }
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
-    ...options,
-    headers: { 'Content-Type': 'application/json', 'X-Client-Id': getClientId(), ...(options?.headers || {}) },
-  })
+  let response: Response
+  try {
+    response = await fetch(path, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Client-Id': getClientId(),
+        ...(activeLlmProvider ? { 'X-LLM-Provider': activeLlmProvider } : {}),
+        ...(options?.headers || {}),
+      },
+    })
+  } catch (reason) {
+    const requestError = reason as Error
+    if (requestError.name === 'AbortError') throw requestError
+    let serviceRecovered = false
+    try {
+      const health = await fetch('/health', { cache: 'no-store' })
+      serviceRecovered = health.ok
+    } catch { /* The service is still unreachable; the message below explains what happened. */ }
+    throw new Error(serviceRecovered
+      ? '刚才与后端的连接中断；服务现已恢复，请重试一次。这不是模型生成失败。'
+      : '当前无法连接后端服务，请稍后重试或重新开启本地预览。这不是模型返回的内容错误。')
+  }
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(payload.detail || '心动信号暂时中断，请稍后重试')
   return payload
+}
+
+function LlmProviderSwitch({ available, value, onChange, disabled = false }: {
+  available: LlmProvider[]
+  value: LlmProvider
+  onChange: (provider: LlmProvider) => void
+  disabled?: boolean
+}) {
+  if (available.length < 2) return null
+  return (
+    <label className="llm-provider-control" title="只影响下一次生成；已提交的剧情和记忆不会被改写">
+      <span>台词模型</span>
+      <select
+        aria-label="切换台词与剧情生成模型"
+        value={value}
+        disabled={disabled}
+        onChange={event => {
+          const provider = normalizeLlmProvider(event.currentTarget.value)
+          if (provider) onChange(provider)
+        }}
+      >
+        {available.map(provider => <option value={provider} key={provider}>{LLM_PROVIDER_LABELS[provider]}</option>)}
+      </select>
+    </label>
+  )
 }
 
 function pendingCharacterId(pending?: PendingChat | null) {
@@ -320,10 +394,25 @@ function normalizeSuggestion(input: ChatSuggestionInput, fallbackKind: Suggestio
   return { text, kind, label }
 }
 
+function firstMeetingFallback(perspective?: Character) {
+  const name = perspective?.name || '新来的嘉宾'
+  const identity = perspective?.mbti ? `${name}，${perspective.mbti}` : name
+  const femaleLines: Record<string, string> = {
+    jiangwan: `你好，我是${identity}。刚才人多，现在我想先好好听你说一句自己的事。`,
+    jiangmi: `嗨，我是${identity}。刚才人多，现在终于能补一句正式的你好了。`,
+    sunnian: `你好，我是${identity}。刚才一直顾着认人，现在总算能坐下来聊两句了。`,
+    luyao: `你好，我是${identity}。刚才没聊上，现在从一句正式的你好开始。`,
+    yecheng: `你好，我是${identity}。刚才人多，有些话没听清，现在想认真认识你。`,
+    tangli: `嗨，我是${identity}。刚才人多没聊上，现在补个正式的你好。`,
+    wenxu: `你好，我是${identity}。刚才在心里排练了一遍，现在直接来认识你。`,
+    qiaolan: `你好，我是${identity}。刚才没聊上，现在补一句你好。`,
+  }
+  return femaleLines[perspective?.id || ''] || `你好，我是${identity}。刚才人多，没来得及好好认识你。`
+}
+
 function fallbackPrompts(character: Character, perspective: Character | undefined, memories: Memory[], phase: Snapshot['storyArc']['phase'], nodeId: string): ChatSuggestionInput[] {
-  const playerName = perspective?.name || '我'
   if (!memories.length) return [
-    { text: `你好，我是${playerName}。刚才人多，没来得及好好认识你。`, type: 'followup', displayLabel: '先打招呼' },
+    { text: firstMeetingFallback(perspective), type: 'followup', displayLabel: '先打招呼' },
     { text: '第一次来这种节目，你现在紧张吗？', type: 'deeper' },
     { text: nodeId === 'guided-chat' ? '节目组让我们记住对方一件真实的小事。你最希望我先记住什么？' : '你为什么会来《心动之旅》？', type: 'mainline' },
   ]
@@ -624,7 +713,7 @@ function EventMediaVideo({ src, className = '', poster, onError, onCanPlay, onTi
   const videoRef = useRef<HTMLVideoElement>(null)
   const playback = useEventPlayback(videoRef, src, active, firstPassConsumed)
   return <>
-    <video ref={videoRef} className={className} src={src} poster={poster} autoPlay={active} muted={playback.muted} playsInline preload={preload || (active ? 'auto' : 'metadata')} onCanPlay={onCanPlay} onError={onError} onTimeUpdate={event => onTimeUpdate?.(event.currentTarget.currentTime)} onEnded={playback.handleEnded} />
+    <video ref={videoRef} className={className} src={src} poster={poster} autoPlay={active} muted={playback.muted} playsInline preload={preload || (active ? 'auto' : 'none')} onCanPlay={onCanPlay} onError={onError} onTimeUpdate={event => onTimeUpdate?.(event.currentTarget.currentTime)} onEnded={playback.handleEnded} />
     {active && <button type="button" className={`scene-audio-toggle ${playback.needsGesture ? 'scene-audio-toggle--attention' : ''}`} onClick={playback.toggleSound} aria-label={playback.muted ? '开启视频声音' : '关闭视频声音'} aria-pressed={!playback.muted}>
       <span aria-hidden="true"><Icon name={playback.muted ? 'volume-off' : 'volume-on'} tone="rose" /></span><b>{playback.soundLabel}</b>
     </button>}
@@ -700,7 +789,7 @@ function SceneMedia({ src, poster, fallbackSrc, fallbackPoster, active, cue, ass
         active={active && visibleSrc === layer.src}
         firstPassConsumed={firstPassConsumed && visibleSrc === layer.src}
         onTimeUpdate={active && visibleSrc === layer.src ? onTimeUpdate : undefined}
-        preload={desiredSrcRef.current === layer.src ? 'auto' : 'metadata'}
+        preload={desiredSrcRef.current === layer.src ? 'auto' : 'none'}
         onCanPlay={() => promote(layer.src)}
         onError={() => reject(layer.src)}
       /> : <MediaVideo
@@ -709,7 +798,7 @@ function SceneMedia({ src, poster, fallbackSrc, fallbackPoster, active, cue, ass
         src={layer.src}
         poster={layer.poster}
         active={active && visibleSrc === layer.src}
-        preload={desiredSrcRef.current === layer.src ? 'auto' : 'metadata'}
+        preload={desiredSrcRef.current === layer.src ? 'auto' : 'none'}
         onCanPlay={() => promote(layer.src)}
         onError={() => reject(layer.src)}
       />)}
@@ -773,7 +862,12 @@ function LoginGate({ message }: { message: string }) {
   )
 }
 
-const MBTI_ORDER = ['INTJ', 'ISFJ', 'ESTP', 'INTP', 'INFJ', 'ENFP', 'ESFJ', 'ISTP']
+const MBTI_ORDER = [
+  'INTJ', 'INTP', 'ENTJ', 'ENTP',
+  'INFJ', 'INFP', 'ENFJ', 'ENFP',
+  'ISTJ', 'ISFJ', 'ESTJ', 'ESFJ',
+  'ISTP', 'ISFP', 'ESTP', 'ESFP',
+]
 
 const STARTUP_STAGE_LABELS = [
   '正在创建你的本局…',
@@ -782,11 +876,20 @@ const STARTUP_STAGE_LABELS = [
   '连接比平时稍慢，仍在为你开启…',
 ]
 
-function Landing({ characters, onStart, busy, startError }: { characters: Character[]; onStart: (mbti: string, perspectiveCharacterId: string) => void; busy: boolean; startError?: string }) {
+function Landing({ characters, onStart, busy, startError, llmProviders, llmProvider, onLlmProvider }: {
+  characters: Character[]
+  onStart: (mbti: string, perspectiveCharacterId: string) => void
+  busy: boolean
+  startError?: string
+  llmProviders: LlmProvider[]
+  llmProvider: LlmProvider
+  onLlmProvider: (provider: LlmProvider) => void
+}) {
   const [phase, setPhase] = useState<'intro' | 'mbti' | 'role'>('intro')
   const [selectedMbti, setSelectedMbti] = useState('')
   const [selectedId, setSelectedId] = useState('')
   const [startupStage, setStartupStage] = useState(0)
+  const [deferredBackgroundVideo, setDeferredBackgroundVideo] = useState('')
   const availableMbtis = useMemo(() => {
     const values = new Set(characters.map(character => character.mbti).filter(Boolean))
     return [...values].sort((left, right) => {
@@ -799,7 +902,7 @@ function Landing({ characters, onStart, busy, startError }: { characters: Charac
   const roleOptions = useMemo(() => characters.filter(character => character.mbti === selectedMbti), [characters, selectedMbti])
   const selected = roleOptions.find(character => character.id === selectedId)
   const backgroundVideo = phase === 'role' && selected ? (selected.video || '').trim() : '/media/video/E01-arrival-reveal.mp4'
-  const backgroundPoster = phase === 'role' && selected ? selected.portrait : undefined
+  const backgroundPoster = phase === 'role' && selected ? selected.portrait : '/media/posters/D1-A1-island-hotel-establish.jpg'
   const chooseMbti = (mbti: string) => {
     setSelectedMbti(mbti)
     setSelectedId('')
@@ -818,17 +921,27 @@ function Landing({ characters, onStart, busy, startError }: { characters: Charac
     ]
     return () => timers.forEach(timer => window.clearTimeout(timer))
   }, [busy])
+  useEffect(() => {
+    setDeferredBackgroundVideo('')
+    if (!backgroundVideo || busy) return
+    // Let the HTML, poster and controls paint before attaching video. This is
+    // especially important on Render cold starts and slower mobile networks.
+    const delay = phase === 'intro' ? 420 : 120
+    const timer = window.setTimeout(() => setDeferredBackgroundVideo(backgroundVideo), delay)
+    return () => window.clearTimeout(timer)
+  }, [backgroundVideo, busy, phase])
   return (
     <main className={`landing landing--${phase}`}>
       <div className="landing-media" aria-hidden="true">
         {busy && backgroundPoster
           ? <div className="scene-media scene-media--startup-poster"><img className="scene-media__poster" src={backgroundPoster} alt="" /></div>
-          : <SceneMedia src={backgroundVideo} poster={backgroundPoster} active soundEnabled={false} />}
+          : <SceneMedia src={deferredBackgroundVideo} poster={backgroundPoster} active soundEnabled={false} />}
         <div className="landing-scrim" />
         <div className="sun-glow" />
       </div>
-      <header className="landing-topbar">
+      <header className={`landing-topbar ${llmProviders.length > 1 ? 'landing-topbar--provider' : ''}`}>
         <span>MBTI 沉浸式恋爱观察实验</span>
+        <LlmProviderSwitch available={llmProviders} value={llmProvider} onChange={onLlmProvider} disabled={busy} />
         <span className="live-pill"><i /> DAY 1</span>
       </header>
       {phase === 'intro' ? <>
@@ -850,7 +963,7 @@ function Landing({ characters, onStart, busy, startError }: { characters: Charac
           <p className="selection-subtitle">先选择 MBTI，再从对应的一男一女两位角色中确定你的观察视角。</p>
         </section>
         <section className="mbti-step glass-card" aria-label="选择 MBTI">
-          <div className="selection-step-heading"><span>本季开放 8 种人格</span><small>每种都有男性与女性角色</small></div>
+          <div className="selection-step-heading"><span>本季开放 {availableMbtis.length} 种人格</span><small>每种都有男性与女性角色</small></div>
           <div className="mbti-grid">
             {availableMbtis.map(mbti => {
               const mbtiCharacters = characters.filter(character => character.mbti === mbti)
@@ -900,7 +1013,7 @@ function Landing({ characters, onStart, busy, startError }: { characters: Charac
             <h2>{selected.publicMask}</h2>
             <p>{selected.independentInterest}</p>
             <dl><div><dt>表达方式</dt><dd>{selected.voice}</dd></div><div><dt>关系边界</dt><dd>{selected.boundary}</dd></div></dl>
-            {selected.mediaStatus === 'planned' && <p className="static-media-note">当前以静态人物图进入；动态形象准备完成后会自动启用，不会借用其他嘉宾的视频。</p>}
+            {selected.mediaStatus === 'planned' && <p className="static-media-note">{selected.portraitKind === 'mbti-gender-concept-anchor' ? '当前展示的是该 MBTI 与性别的概念形象，不冒充真人身份。专属定妆照与动态视频审核完成后会自动替换。' : '当前以静态人物图进入；动态形象准备完成后会自动启用，不会借用其他嘉宾的视频。'}</p>}
             <button className="primary-button start-button" disabled={busy} onClick={() => { unlockAudioIntent(); onStart(selected.mbti, selected.id) }}><span>{busy ? STARTUP_STAGE_LABELS[startupStage] : startError ? '重新尝试开启' : `跟随${selected.name}进入小屋`}</span><i>{busy ? '···' : <Icon name="arrow-right" />}</i></button>
             {(busy || startError) && <p className={`role-start-feedback ${startError ? 'role-start-feedback--error' : ''}`} role={startError ? 'alert' : 'status'} aria-live="polite">
               {startError || (startupStage < 3 ? '正在建立本局，不会等待视频下载，也无需重复点击。' : '人物图片会先陪你等待；动态画面进入剧情后再加载。')}
@@ -1088,7 +1201,7 @@ function ChatSheet({ character, characters, snapshot, embeddedOpener, context, e
   character: Character; characters: Character[]; snapshot: Snapshot; embeddedOpener?: ChatOpenerPayload
   context: ConversationContext; error?: string
   onClose: () => void
-  onSend: (message: string, context: ConversationContext) => Promise<void>; busy: boolean
+  onSend: (message: string, context: ConversationContext) => Promise<boolean>; busy: boolean
 }) {
   const [draft, setDraft] = useState('')
   const firstLoadRef = useRef(true)
@@ -1111,6 +1224,7 @@ function ChatSheet({ character, characters, snapshot, embeddedOpener, context, e
   const [opener, setOpener] = useState(() => normalizeOpener(initialPayload, fallback))
   const [openerVisible, setOpenerVisible] = useState(!!initialPayload)
   const [openerLoading, setOpenerLoading] = useState(!initialPayload)
+  const [openerGenerationSource, setOpenerGenerationSource] = useState(initialPayload?.generationSource || '')
   const [remotePrompts, setRemotePrompts] = useState<ChatSuggestionInput[]>(() => promptsFromPayload(initialPayload))
   const axes = snapshot.relationships?.[character.id]
   const attitude = snapshot.attitudes?.[character.id] || 'curious'
@@ -1124,6 +1238,7 @@ function ChatSheet({ character, characters, snapshot, embeddedOpener, context, e
         setOpenerVisible(true)
       }
       setRemotePrompts(promptsFromPayload(currentEmbedded))
+      setOpenerGenerationSource(currentEmbedded.generationSource || '')
       setOpenerLoading(false)
       firstLoadRef.current = false
       return
@@ -1142,6 +1257,7 @@ function ChatSheet({ character, characters, snapshot, embeddedOpener, context, e
       .then(payload => {
         if (cancelled) return
         if (initialLoad) { setOpener(normalizeOpener(payload, fallback)); setOpenerVisible(true) }
+        setOpenerGenerationSource(payload.generationSource || '')
         const generatedPrompts = promptsFromPayload(payload)
         if (generatedPrompts.length) setRemotePrompts(generatedPrompts)
       })
@@ -1157,13 +1273,12 @@ function ChatSheet({ character, characters, snapshot, embeddedOpener, context, e
       })
     return () => { cancelled = true; if (grace) window.clearTimeout(grace) }
   }, [character.id, embeddedOpener, snapshot.chatOpeners, snapshot.revision, snapshot.runId])
-  const firstGreeting: SuggestedPrompt = { text: `你好，我是${perspective?.name || '新来的嘉宾'}。刚才人多，没来得及好好认识你。`, kind: 'followup', label: '先打招呼' }
   const fallbackSuggestions = fallbackPrompts(character, perspective, memories, snapshot.storyArc.phase, snapshot.nodeId)
   const latestSuggestions = latest?.suggestions || latest?.suggestedPrompts || []
   const suggestedPrompts = selectSuggestedPrompts(
     [...latestSuggestions, ...remotePrompts, ...fallbackSuggestions],
     perspective,
-    memories.length ? undefined : firstGreeting,
+    undefined,
   )
   useEffect(() => {
     // Keep the independent history viewport pinned to the newest turn after
@@ -1181,8 +1296,8 @@ function ChatSheet({ character, characters, snapshot, embeddedOpener, context, e
     event?.preventDefault()
     const message = draft.trim()
     if (!message || busy) return
-    setDraft('')
-    await onSend(message, context)
+    const sent = await onSend(message, context)
+    if (sent) setDraft('')
   }
   return (
     <div className="sheet-backdrop" role="dialog" aria-modal="true" aria-label={`与${character.name}私聊`}>
@@ -1209,7 +1324,7 @@ function ChatSheet({ character, characters, snapshot, embeddedOpener, context, e
           </div>
           <div className="message-stream" ref={streamRef} role="log" aria-live="polite" aria-label={`与${character.name}的对话记录`} tabIndex={0}>
             {!openerVisible && <div className="message agent opener-loading" aria-live="polite"><b>{character.name}正在朝你走来</b><span><i /><i /><i /></span><small>正在结合此刻的剧情和你们的记忆…</small></div>}
-            {openerVisible && <div className="message agent conversation-opener"><b>{character.name} · {latest ? '又见面了' : '初次寒暄'}</b><em>{opener.stageDirection}</em><p>{opener.line}</p>{openerLoading && <small>正在读取此刻更贴近人物卡的表达…</small>}</div>}
+            {openerVisible && <div className="message agent conversation-opener"><b>{character.name} · {latest ? '又见面了' : '初次寒暄'}</b><em>{opener.stageDirection}</em><p>{opener.line}</p>{openerLoading && <small>正在读取此刻更贴近人物卡的表达…</small>}{!openerLoading && openerGenerationSource === 'engine-fallback' && <small className="generation-source generation-source--fallback">所选模型本轮未通过人物卡合同，已显示安全台本</small>}</div>}
             {memories.slice(-10).map(memory => (
               <div className="message-pair" key={memory.id}>
                 <div className="message player"><p>{memory.playerText}</p></div>
@@ -1243,7 +1358,7 @@ function createConversationId() {
 function GroupChatSheet({ venue, characters, snapshot, busy, error, onClose, onSend }: {
   venue: ChatVenue; characters: Character[]; snapshot: Snapshot; busy: boolean; error?: string
   onClose: () => void
-  onSend: (message: string, participantIds: string[], context: ConversationContext) => Promise<void>
+  onSend: (message: string, participantIds: string[], context: ConversationContext) => Promise<boolean>
 }) {
   const perspectiveId = snapshot.player.perspectiveCharacterId
   const availableIds = venue.characters.map(character => character.id).filter(id => id !== perspectiveId)
@@ -1274,9 +1389,8 @@ function GroupChatSheet({ venue, characters, snapshot, busy, error, onClose, onS
     event?.preventDefault()
     const message = draft.trim()
     if (!message || busy || selectedIds.length < 2) return
-    setDraft('')
     const participantIds = [perspectiveId, ...selectedIds].filter((value): value is string => !!value)
-    await onSend(message, selectedIds, {
+    const sent = await onSend(message, selectedIds, {
       conversationId,
       time: venue.time || snapshot.sceneContext?.time,
       locationId: venue.locationId,
@@ -1284,6 +1398,7 @@ function GroupChatSheet({ venue, characters, snapshot, busy, error, onClose, onS
       participantIds,
       channel: 'group',
     })
+    if (sent) setDraft('')
   }
   const promptOptions = [
     `我们都在${venue.locationName}，要不要先说说刚才各自注意到谁了？`,
@@ -1481,13 +1596,21 @@ function resolveSceneMedia(view: View, guidedCharacterId?: string | null) {
   }
 }
 
-function Game({ view, onView, onRestart }: { view: View; onView: (view: View) => void; onRestart: () => Promise<void> }) {
+function Game({ view, onView, onRestart, llmProviders, llmProvider, onLlmProvider }: {
+  view: View
+  onView: (view: View) => void
+  onRestart: () => Promise<void>
+  llmProviders: LlmProvider[]
+  llmProvider: LlmProvider
+  onLlmProvider: (provider: LlmProvider) => void
+}) {
   const { snapshot, node, characters } = view
   const [chatCharacter, setChatCharacter] = useState<Character | null>(null)
   const [chatContext, setChatContext] = useState<ConversationContext | null>(null)
   const [groupVenue, setGroupVenue] = useState<ChatVenue | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [generationNotice, setGenerationNotice] = useState('')
   const [receipt, setReceipt] = useState<Receipt | null>(null)
   const [cinematic, setCinematic] = useState<string | null>(node.cinematic || null)
   const [cinematicTitle, setCinematicTitle] = useState(node.title || '新的故事开始')
@@ -1565,9 +1688,9 @@ function Game({ view, onView, onRestart }: { view: View; onView: (view: View) =>
   const choose = async (choice: Choice, customText = '') => {
     if (!typewriter.readyForChoices) return
     unlockAudioIntent()
-    setBusy(true); setError('')
+    setBusy(true); setError(''); setGenerationNotice('')
     try {
-      const result = await api<View & { receipt: Receipt }>(`/api/runs/${snapshot.runId}/choices`, {
+      const result = await api<View & { receipt: Receipt; llmProvider?: LlmProvider | null; generationSource?: string }>(`/api/runs/${snapshot.runId}/choices`, {
         method: 'POST', body: JSON.stringify({
           choiceId: choice.id,
           characterId: choice.characterId || choice.targetCharacterId,
@@ -1577,12 +1700,15 @@ function Game({ view, onView, onRestart }: { view: View; onView: (view: View) =>
       })
       setReceipt(result.receipt); setTimeout(() => setReceipt(null), 3300)
       onView(result)
+      if (result.generationSource === 'engine-fallback') {
+        setGenerationNotice('所选模型本段未通过剧情合同，已使用安全台本；你的选择仍已正常保存。')
+      }
       if (result.node.cinematic) { setCinematicPreviewedSrc(null); setCinematicTitle(result.node.title || '新的故事开始'); setCinematic(result.node.cinematic) }
     } catch (reason) { setError((reason as Error).message) }
     finally { setBusy(false) }
   }
   const send = async (message: string, context: ConversationContext) => {
-    if (!chatCharacter) return
+    if (!chatCharacter) return false
     setBusy(true); setError('')
     try {
       const result = await api<View & { receipt: Receipt }>(`/api/runs/${snapshot.runId}/agents/${chatCharacter.id}/messages`, {
@@ -1590,7 +1716,8 @@ function Game({ view, onView, onRestart }: { view: View; onView: (view: View) =>
       })
       setReceipt(result.receipt); setTimeout(() => setReceipt(null), 3300)
       onView(result)
-    } catch (reason) { setError((reason as Error).message) }
+      return true
+    } catch (reason) { setError((reason as Error).message); return false }
     finally { setBusy(false) }
   }
   const sendGroup = async (message: string, participantIds: string[], context: ConversationContext) => {
@@ -1602,7 +1729,8 @@ function Game({ view, onView, onRestart }: { view: View; onView: (view: View) =>
       const firstReceipt = result.receipts?.[0]
       if (firstReceipt) { setReceipt(firstReceipt); setTimeout(() => setReceipt(null), 3300) }
       onView(result)
-    } catch (reason) { setError((reason as Error).message) }
+      return true
+    } catch (reason) { setError((reason as Error).message); return false }
     finally { setBusy(false) }
   }
   const directStory = async () => {
@@ -1648,9 +1776,10 @@ function Game({ view, onView, onRestart }: { view: View; onView: (view: View) =>
   const directorAvailable = node.allowDirector === true || (snapshot.storyArc.phase === 'late' && !node.isEnding)
   return (
     <main className="game-shell game-shell--immersive">
-      <header className="game-topbar">
+      <header className={`game-topbar ${llmProviders.length > 1 ? 'game-topbar--provider' : ''}`}>
         <div><span>心动之旅</span><small>{node.chapter}</small></div>
         <div className="game-progress"><i style={{ width: `${PROGRESS[snapshot.nodeId] || 0}%` }} /></div>
+        <LlmProviderSwitch available={llmProviders} value={llmProvider} onChange={onLlmProvider} disabled={busy} />
         <button className="signal-button" aria-label="关系状态"><HeartMark small /><span>{snapshot.flags.heat + snapshot.echoMemories.length}</span></button>
       </header>
       <section className="scene-stage">
@@ -1718,6 +1847,7 @@ function Game({ view, onView, onRestart }: { view: View; onView: (view: View) =>
             </>}
           </section>}
           {node.isEnding && <div className="ending-proof"><span>首个联通闭环已完成</span><p>你的文字选择进入角色记忆，并在剧情回声中触发了新的表达。</p><button disabled={busy} onClick={restart}>{busy ? '正在重启心动信号…' : '重新开始一段旅程'}</button></div>}
+          {generationNotice && <p className="generation-note" role="status">{generationNotice}</p>}
           {error && <p className="error-note">{error}</p>}
         </div>}
       </section>
@@ -1745,14 +1875,38 @@ function Game({ view, onView, onRestart }: { view: View; onView: (view: View) =>
 export default function App() {
   const [characters, setCharacters] = useState<Character[]>([])
   const [view, setView] = useState<View | null>(null)
+  const [llmProviders, setLlmProviders] = useState<LlmProvider[]>([])
+  const [llmProvider, setLlmProvider] = useState<LlmProvider>(activeLlmProvider || 'deepseek')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [authError, setAuthError] = useState('')
   const [startError, setStartError] = useState('')
   const startRequestInFlight = useRef(false)
+  const chooseLlmProvider = (provider: LlmProvider) => {
+    if (!llmProviders.includes(provider)) return
+    setActiveLlmProvider(provider)
+    setLlmProvider(provider)
+  }
   useEffect(() => {
-    api<{ characters: Character[]; view: View | null }>('/api/bootstrap')
-      .then(data => { setCharacters(data.characters); setView(new URLSearchParams(location.search).get('intro') === '1' ? null : data.view) })
+    api<{ characters: Character[]; view: View | null; llmProviders?: LlmProviderConfig }>('/api/bootstrap')
+      .then(data => {
+        const available = Array.from(new Set((data.llmProviders?.available || [])
+          .map(normalizeLlmProvider)
+          .filter((provider): provider is LlmProvider => !!provider)))
+        const serverChoice = normalizeLlmProvider(data.llmProviders?.current)
+          || normalizeLlmProvider(data.llmProviders?.default)
+          || available[0]
+          || 'deepseek'
+        const savedChoice = storedLlmProvider()
+        const selectedProvider = savedChoice && available.includes(savedChoice)
+          ? savedChoice
+          : available.includes(serverChoice) ? serverChoice : available[0] || serverChoice
+        setLlmProviders(available)
+        setLlmProvider(selectedProvider)
+        setActiveLlmProvider(selectedProvider)
+        setCharacters(data.characters)
+        setView(new URLSearchParams(location.search).get('intro') === '1' ? null : data.view)
+      })
       .catch(error => setAuthError(error.message))
       .finally(() => setLoading(false))
   }, [])
@@ -1781,6 +1935,6 @@ export default function App() {
   }
   if (loading) return <Loading />
   if (authError) return <LoginGate message={authError} />
-  if (!view) return <Landing characters={cast} onStart={start} busy={busy} startError={startError} />
-  return <Game view={view} onView={setView} onRestart={() => start(view.snapshot.player.mbti, view.snapshot.player.perspectiveCharacterId)} />
+  if (!view) return <Landing characters={cast} onStart={start} busy={busy} startError={startError} llmProviders={llmProviders} llmProvider={llmProvider} onLlmProvider={chooseLlmProvider} />
+  return <Game view={view} onView={setView} onRestart={() => start(view.snapshot.player.mbti, view.snapshot.player.perspectiveCharacterId)} llmProviders={llmProviders} llmProvider={llmProvider} onLlmProvider={chooseLlmProvider} />
 }

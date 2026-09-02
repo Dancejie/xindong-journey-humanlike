@@ -7,9 +7,11 @@ ai.properties
 db.properties
 .env
 .env.*
+!.env.llm.local.example
 frontend/node_modules/
 frontend/dist-minitool/
 release/
+media/production/full-mbti-r9/
 __pycache__/
 *.pyc
 .pytest_cache/

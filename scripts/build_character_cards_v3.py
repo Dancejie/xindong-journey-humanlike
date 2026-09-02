@@ -2,9 +2,12 @@
 """Build evidence-layered v3 cards from the current runtime-compatible v2 set."""
 from __future__ import annotations
 
+import difflib
 import json
 from copy import deepcopy
+from itertools import combinations
 from pathlib import Path
+import re
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -12,6 +15,87 @@ SOURCE = ROOT / "content" / "character_cards.v2.json"
 TARGET = ROOT / "content" / "character_cards.v3.json"
 SOURCES_TARGET = ROOT / "content" / "research_sources.v3.json"
 HUMANLIKE_OVERRIDE = ROOT / "content" / "character_fewshot_overrides.v1.json"
+DISTINCTION_OVERRIDE = ROOT / "content" / "character_distinction_overrides.r9.json"
+R9_EXTENSION_ROOT = ROOT / "content" / "character_cards.r9"
+R9_EXTENSION_MANIFEST = R9_EXTENSION_ROOT / "manifest.json"
+
+
+LEGACY_CARD_IDS = [
+    "shenmo", "linyu", "chengye", "guyan", "jiangwan", "jiangmi", "sunnian", "chensu",
+    "luyao", "yecheng", "tangli", "wenxu", "hechuan", "peiran", "lichuan", "qiaolan",
+]
+CANONICAL_MBTI_TYPES = [
+    "INTJ", "INTP", "ENTJ", "ENTP",
+    "INFJ", "INFP", "ENFJ", "ENFP",
+    "ISTJ", "ISFJ", "ESTJ", "ESFJ",
+    "ISTP", "ISFP", "ESTP", "ESFP",
+]
+R9_MISSING_TYPES = {"ENTJ", "ENTP", "INFP", "ENFJ", "ISTJ", "ESTJ", "ISFP", "ESFP"}
+REQUIRED_CARD_FIELDS = {
+    "id", "names", "mbti", "tagline", "accent", "portrait", "video", "identity",
+    "sourceProfile", "psychology", "drives", "cognitiveStyle", "voice", "interactionStrategies",
+    "reactionMatrix", "knowledge", "dialoguePolicy", "fewShots", "memoryPolicy", "eventPolicy",
+    "agentPolicy", "researchAnchors", "sourceRefIds",
+}
+REQUIRED_SOURCE_FEWSHOT_FIELDS = {
+    "id", "situation", "playerMove", "observableCue", "publicInterpretation", "chosenTactic",
+    "stageDirection", "attitude", "dialogue", "repairOrExit",
+}
+
+SAME_TYPE_MAX_SEQUENCE_RATIO = 0.38
+SAME_TYPE_MAX_TRIGRAM_JACCARD = 0.13
+GLOBAL_MAX_SEQUENCE_RATIO = 0.50
+GLOBAL_MAX_TRIGRAM_JACCARD = 0.20
+
+
+def _flatten_distinction_value(value: object) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return " ".join(_flatten_distinction_value(item) for item in value)
+    if isinstance(value, dict):
+        return " ".join(_flatten_distinction_value(value[key]) for key in sorted(value))
+    return str(value)
+
+
+def _normalize_distinction_text(value: object) -> str:
+    return re.sub(r"[\s，。；：、‘’“”（）()—…！？,.!?;:'\"-]+", "", _flatten_distinction_value(value))
+
+
+def _distinction_signature(card: dict) -> str:
+    reaction_moves = [item["speechMove"] for item in card["reactionMatrix"].values()]
+    return _normalize_distinction_text([
+        card["tagline"],
+        card["identity"]["canonicalRoles"],
+        card["cognitiveStyle"]["dominantPattern"],
+        card["cognitiveStyle"]["inputFilter"],
+        card["cognitiveStyle"]["decisionRule"],
+        card["cognitiveStyle"]["repairMove"],
+        card["voice"],
+        card["interactionStrategies"],
+        card["memoryPolicy"]["remember"],
+        reaction_moves,
+    ])
+
+
+def distinction_similarity(first: dict, second: dict) -> tuple[float, float]:
+    """Return explainable sequence and trigram overlap for two character cores."""
+    first_signature = _distinction_signature(first)
+    second_signature = _distinction_signature(second)
+    sequence_ratio = difflib.SequenceMatcher(
+        None, first_signature, second_signature, autojunk=False
+    ).ratio()
+
+    def trigrams(value: str) -> set[str]:
+        if len(value) < 3:
+            return {value} if value else set()
+        return {value[index:index + 3] for index in range(len(value) - 2)}
+
+    first_grams = trigrams(first_signature)
+    second_grams = trigrams(second_signature)
+    union = first_grams | second_grams
+    trigram_jaccard = len(first_grams & second_grams) / len(union) if union else 1.0
+    return sequence_ratio, trigram_jaccard
 
 
 SOURCE_PROFILES = {
@@ -358,14 +442,501 @@ def apply_humanlike_overlay(package: dict) -> dict:
     return overlay
 
 
+def _personalized_reaction_matrix(card: dict) -> dict:
+    """Compile shared safety axes into the character's own observable moves."""
+    values = card["psychology"]["values"]
+    blind_spots = card["psychology"]["blindSpots"]
+    boundaries = card["psychology"]["boundaries"]
+    voice_moves = card["voice"]["preferredMoves"]
+    cognitive = card["cognitiveStyle"]
+    interest = card["drives"]["independentInterest"]
+    return {
+        "supportive": {
+            "internalShift": f"确认对方是否具体看见了‘{values[0]}’，而不是只给泛化肯定",
+            "speechMove": f"先落到‘{voice_moves[0]}’，再从‘{interest}’推进一个可执行动作",
+            "deltaHint": {"trust": "+", "respect": "+"},
+        },
+        "probing": {
+            "internalShift": f"判断追问是否尊重‘{cognitive['inputFilter']}’里的选择权和信息边界",
+            "speechMove": f"只回答当前能确认的一层，再按‘{cognitive['decisionRule']}’给一个可继续的问题",
+            "deltaHint": {"trust": "0/+", "fear": "0/+"},
+        },
+        "challenging": {
+            "internalShift": f"检查挑战是否击中了‘{blind_spots[0]}’，以及对方是否愿意共同承担修复",
+            "speechMove": cognitive["repairMove"],
+            "deltaHint": {"respect": "-/+", "attraction": "-/+"},
+        },
+        "boundaryViolation": {
+            "internalShift": f"优先保护‘{boundaries[0]}’，不把善意猜测当成授权",
+            "speechMove": f"先停止越界动作，再按人物自己的方式说明可继续条件：{card['psychology']['conflictStyle']}",
+            "deltaHint": {"trust": "-", "resentment": "+"},
+        },
+    }
+
+
+def apply_distinction_overlay(package: dict) -> dict:
+    """Apply reviewed same-type differentiation and compile per-card reactions."""
+    overlay = json.loads(DISTINCTION_OVERRIDE.read_text(encoding="utf-8"))
+    card_index = {card["id"]: card for card in package["cards"]}
+    patch_ids = [patch["cardId"] for patch in overlay["cardPatches"]]
+    if len(patch_ids) != len(set(patch_ids)):
+        raise ValueError("duplicate cardId in distinction overlay")
+    unknown_ids = sorted(set(patch_ids) - set(card_index))
+    if unknown_ids:
+        raise ValueError(f"unknown cardId in distinction overlay: {unknown_ids}")
+    for patch in overlay["cardPatches"]:
+        card = card_index[patch["cardId"]]
+        card["cognitiveStyle"] = deepcopy(patch["cognitiveStyle"])
+        card["interactionStrategies"] = deepcopy(patch["interactionStrategies"])
+        card["memoryPolicy"]["remember"] = deepcopy(patch["memoryRemember"])
+    for card in package["cards"]:
+        card["reactionMatrix"] = _personalized_reaction_matrix(card)
+        card["dialoguePolicy"]["distinctiveVoiceGate"] = (
+            "每轮先执行本卡第一注意对象与修复动作："
+            f"{card['cognitiveStyle']['inputFilter']}；{card['cognitiveStyle']['repairMove']}。"
+            "不得借用其他嘉宾的职业物件、口头禅、亲密策略或冲突修复。"
+        )
+    package["contentVersion"] = overlay["contentVersion"]
+    return overlay
+
+
+def load_r9_extension() -> tuple[dict, list[dict]]:
+    """Load the append-only R9 source in its declared, reviewable order."""
+    manifest = json.loads(R9_EXTENSION_MANIFEST.read_text(encoding="utf-8"))
+    specs: list[dict] = []
+    for file_name in manifest.get("cardFiles") or []:
+        if Path(file_name).name != file_name:
+            raise ValueError(f"R9 cardFiles must be local file names: {file_name!r}")
+        source_path = R9_EXTENSION_ROOT / file_name
+        group = json.loads(source_path.read_text(encoding="utf-8"))
+        for raw_spec in group.get("cards") or []:
+            spec = deepcopy(raw_spec)
+            spec["_sourceFile"] = file_name
+            specs.append(spec)
+    validate_r9_source(manifest, specs)
+    return manifest, specs
+
+
+def validate_r9_source(manifest: dict, specs: list[dict]) -> None:
+    expected_count = int(manifest.get("expectedCardCount") or 0)
+    if len(specs) != expected_count or expected_count != 16:
+        raise ValueError(f"R9 extension must contain 16 cards, found {len(specs)}")
+    expected_types = set(manifest.get("expectedTypes") or [])
+    if expected_types != R9_MISSING_TYPES:
+        raise ValueError(f"R9 expectedTypes mismatch: {sorted(expected_types)}")
+
+    ids = [str(spec.get("id") or "") for spec in specs]
+    names = [str(spec.get("name") or "") for spec in specs]
+    if len(ids) != len(set(ids)) or any(not value for value in ids):
+        raise ValueError("R9 card ids must be non-empty and unique")
+    if len(names) != len(set(names)) or any(not value for value in names):
+        raise ValueError("R9 card names must be non-empty and unique")
+    if set(ids) & set(LEGACY_CARD_IDS):
+        raise ValueError("R9 ids must not collide with the existing 16 cards")
+
+    by_type: dict[str, list[dict]] = {}
+    all_fewshot_ids: list[str] = []
+    all_dialogues: list[str] = []
+    event_ids: list[str] = []
+    for spec in specs:
+        mbti = str(spec.get("mbti") or "")
+        by_type.setdefault(mbti, []).append(spec)
+        required = {
+            "id", "name", "pronoun", "gender", "mbti", "tagline", "accent", "age", "occupation",
+            "publicPersona", "privatePressure", "romancePattern", "adaptationBoundary", "psychology",
+            "drives", "cognitiveStyle", "voice", "interactionStrategies", "memoryPolicy",
+            "allowedIntentIds", "exitTriggers", "event", "authoringEvidence", "fewShots",
+        }
+        missing = sorted(required - set(spec))
+        if missing:
+            raise ValueError(f"R9 card {spec.get('id')} missing source fields: {missing}")
+        if spec["gender"] not in {"男性", "女性"}:
+            raise ValueError(f"R9 card {spec['id']} has invalid gender")
+        if len(spec["fewShots"]) < 4:
+            raise ValueError(f"R9 card {spec['id']} must have at least four few-shots")
+        if len(spec["fewShots"]) != 4:
+            raise ValueError(f"R9 v1 source fixes exactly four reviewable few-shots per card: {spec['id']}")
+        for shot in spec["fewShots"]:
+            missing_shot = sorted(REQUIRED_SOURCE_FEWSHOT_FIELDS - set(shot))
+            if missing_shot:
+                raise ValueError(f"R9 few-shot {shot.get('id')} missing fields: {missing_shot}")
+            if not str(shot["id"]).startswith(f"fs.{spec['id']}."):
+                raise ValueError(f"R9 few-shot id must bind to card {spec['id']}: {shot['id']}")
+            all_fewshot_ids.append(str(shot["id"]))
+            all_dialogues.append(str(shot["dialogue"]).strip())
+            if any(key.lower() in {"thought", "thoughts", "reasoning", "cot", "chainofthought"} for key in shot):
+                raise ValueError(f"private reasoning field forbidden in R9 few-shot {shot['id']}")
+        event_ids.append(str(spec["event"].get("id") or ""))
+
+    if set(by_type) != R9_MISSING_TYPES:
+        raise ValueError(f"R9 source type coverage mismatch: {sorted(by_type)}")
+    for mbti, cards in by_type.items():
+        genders = {card["gender"] for card in cards}
+        if len(cards) != 2 or genders != {"男性", "女性"}:
+            raise ValueError(f"R9 {mbti} must contain exactly one man and one woman")
+    if len(all_fewshot_ids) != len(set(all_fewshot_ids)):
+        raise ValueError("R9 few-shot ids must be unique")
+    if len(all_dialogues) != len(set(all_dialogues)):
+        raise ValueError("R9 few-shot dialogue must not be duplicated across characters")
+    if any(not event_id for event_id in event_ids) or len(event_ids) != len(set(event_ids)):
+        raise ValueError("R9 event ids must be non-empty and unique")
+
+    # These high-signal fields catch accidental gender/type reskins while still
+    # allowing the shared runtime schema and safety policies to remain common.
+    for field_getter, label in (
+        (lambda card: card["occupation"], "occupation"),
+        (lambda card: card["tagline"], "tagline"),
+        (lambda card: card["psychology"]["conflictStyle"], "conflictStyle"),
+        (lambda card: card["voice"]["sentenceShape"], "voice.sentenceShape"),
+        (lambda card: card["event"]["label"], "event.label"),
+    ):
+        values = [str(field_getter(card)).strip() for card in specs]
+        if len(values) != len(set(values)):
+            raise ValueError(f"R9 cards must not share templated {label}")
+
+
+def expand_r9_few_shot(spec: dict, raw_shot: dict) -> dict:
+    dialogue = str(raw_shot["dialogue"]).strip()
+    trace = {
+        "visibility": "observable-public",
+        "cue": raw_shot["observableCue"],
+        "interpretation": raw_shot["publicInterpretation"],
+        "chosenTactic": raw_shot["chosenTactic"],
+        "spokenMove": dialogue,
+        "repairOrExit": raw_shot["repairOrExit"],
+    }
+    return {
+        "id": raw_shot["id"],
+        "situation": raw_shot["situation"],
+        "context": raw_shot["situation"],
+        "player": raw_shot["playerMove"],
+        "playerMove": raw_shot["playerMove"],
+        "observableCue": raw_shot["observableCue"],
+        "publicInterpretation": raw_shot["publicInterpretation"],
+        "chosenTactic": raw_shot["chosenTactic"],
+        "stageDirection": raw_shot["stageDirection"],
+        "attitude": raw_shot["attitude"],
+        "dialogue": dialogue,
+        "reply": dialogue,
+        "repairOrExit": raw_shot["repairOrExit"],
+        "decisionTrace": trace,
+        "sourceEvidenceIds": [
+            f"evidence.mbti.{str(spec['mbti']).lower()}.preference",
+            f"evidence.r9.{spec['id']}.authored-profile",
+        ],
+        "copyBoundary": "original-project-expression",
+    }
+
+
+def build_r9_card(spec: dict, type_evidence: dict) -> dict:
+    event = spec["event"]
+    memory_policy = deepcopy(spec["memoryPolicy"])
+    memory_policy["writeRules"] = [
+        "只保存会改变未来选择的事实、承诺、偏好、边界或修复",
+        "角色解释必须保持可修正，不能升级为客观事实",
+    ]
+    memory_policy["doNotStore"] = [
+        "无关寒暄",
+        "模型猜测的创伤、诊断或人格归因",
+        "未获本人确认的第三方秘密",
+        "私密思维链",
+    ]
+    source_file = spec["_sourceFile"]
+    card = {
+        "id": spec["id"],
+        "names": {
+            "primary": spec["name"],
+            "aliases": deepcopy(spec.get("aliases") or []),
+            "pronouns": [spec["pronoun"]],
+        },
+        "mbti": spec["mbti"],
+        "tagline": spec["tagline"],
+        "accent": spec["accent"],
+        "portrait": f"/media/portraits/{spec['id']}.jpg",
+        "video": "",
+        "media": {
+            "status": "planned",
+            "fallbackKind": "static-character-placeholder",
+            "generationRequired": True,
+            "provenanceStatus": "pending-original-generation",
+            "rightsStatus": "pending-review",
+            "runtimeStatus": "blocked",
+            "identityAnchorStatus": "reviewed-original",
+            "identityAnchorManifestRef": "media/production/full-mbti-r9/identity-anchor-manifest.r9.json",
+        },
+        "identity": {
+            "species": "人类",
+            "gender": spec["gender"],
+            "canonicalRoles": ["恋综嘉宾", spec["occupation"]],
+            "affiliations": ["心动小屋"],
+        },
+        "sourceProfile": {
+            "alignment": "runtime-original",
+            "sourceName": None,
+            "sourceMbti": spec["mbti"],
+            "facts": {
+                "age": spec["age"],
+                "occupation": spec["occupation"],
+                "publicPersona": spec["publicPersona"],
+                "privatePressure": spec["privatePressure"],
+                "romancePattern": spec["romancePattern"],
+            },
+            "adaptationBoundary": spec["adaptationBoundary"],
+            "mbtiBoundary": "MBTI是非诊断、非唯一人格的偏好镜头；人物事实、经历、利益、边界与当下选择优先。",
+        },
+        "psychology": deepcopy(spec["psychology"]),
+        "drives": deepcopy(spec["drives"]),
+        "cognitiveStyle": deepcopy(spec["cognitiveStyle"]),
+        "voice": deepcopy(spec["voice"]),
+        "interactionStrategies": deepcopy(spec["interactionStrategies"]),
+        "reactionMatrix": deepcopy(REACTIONS),
+        "knowledge": {
+            "knows": ["当前心动小屋的任务规则与自己亲历的互动", "自己的公开身份、私人压力与已发生记忆"],
+            "doesNotKnow": ["其他嘉宾未公开的秘密", "玩家未表达的真实动机", "未来剧情与隐藏数值"],
+            "disclosureRule": "零信任只披露公开事实或一层可验证脆弱；私人压力必须由具体信任、玩家互惠或剧情锚点逐步解锁。",
+        },
+        "dialoguePolicy": {
+            "length": "35-120个中文字符，通常不超过两句",
+            "replyShape": ["镜头可见的小动作", "承接玩家原话中的一个具体词", "人物判断或反价", "推动一个问题、动作、承诺或边界"],
+            "mustAdvanceBy": ["新事实", "可执行动作", "明确问题", "具体反价", "边界或退出"],
+            "forbidden": ["泛化安慰", "复述玩家整句话", "心理咨询腔", "MBTI术语直出", "无事件的暧昧空话", "私密思维链"],
+        },
+        "fewShots": [expand_r9_few_shot(spec, shot) for shot in spec["fewShots"]],
+        "memoryPolicy": memory_policy,
+        "eventPolicy": {
+            "eventId": event["id"],
+            "label": event["label"],
+            "trigger": event["trigger"],
+            "minTurns": 1,
+            "minAxes": deepcopy(event["minAxes"]),
+            "activationText": event["activationText"],
+        },
+        "agentPolicy": {
+            "proposalMode": "bounded-effects",
+            "allowedIntentIds": deepcopy(spec["allowedIntentIds"]),
+            "allowedEventIds": [event["id"]],
+            "deltaBounds": {
+                "trust": [-3, 3], "affection": [-2, 3], "respect": [-3, 3], "fear": [-2, 3],
+                "debt": [-2, 2], "attraction": [-2, 3], "resentment": [-2, 3],
+            },
+            "exitTriggers": deepcopy(spec["exitTriggers"]),
+        },
+        "researchAnchors": [
+            {
+                "sourceRefId": type_evidence["sourceId"],
+                "work": "Myers & Briggs Foundation type descriptions and type dynamics",
+                "locator": type_evidence["locator"],
+                "microExcerpt": None,
+                "observablePattern": type_evidence["claim"],
+                "transferRule": type_evidence["transferRule"] + " 该镜头不得覆盖本卡原创人物事实。",
+            },
+            {
+                "sourceRefId": "source.r9-character-authoring",
+                "work": "《心动之旅》R9全MBTI双性别原创人物扩展源",
+                "locator": f"content/character_cards.r9/{source_file}#cards[id={spec['id']}]",
+                "microExcerpt": None,
+                "observablePattern": spec["authoringEvidence"]["claim"],
+                "transferRule": spec["authoringEvidence"]["transferRule"],
+            },
+        ],
+        "sourceRefIds": [
+            "source.mbti-foundation-types",
+            "source.mbti-type-dynamics",
+            "source.r9-character-authoring",
+            *(spec.get("researchSourceIds") or []),
+        ],
+    }
+    return card
+
+
+def apply_r9_extension(package: dict, manifest: dict, specs: list[dict]) -> None:
+    current_ids = [card["id"] for card in package["cards"]]
+    if current_ids != LEGACY_CARD_IDS:
+        raise ValueError(f"existing 16-card order changed before R9 append: {current_ids}")
+    evidence_by_type = {
+        item["mbti"]: item for item in manifest["researchPatch"]["typeEvidence"]
+    }
+    if set(evidence_by_type) != R9_MISSING_TYPES:
+        raise ValueError("R9 manifest must contain one official-source evidence card per missing type")
+    package["cards"].extend(build_r9_card(spec, evidence_by_type[spec["mbti"]]) for spec in specs)
+    package["contentVersion"] = manifest["contentVersion"]
+    package["status"] = "authoring-validated-candidate"
+    package["mbtiUsePolicy"] = deepcopy(manifest["mbtiUsePolicy"])
+    package["rosterPolicy"] = {
+        "librarySize": 32,
+        "runCastSize": 8,
+        "selectionOrder": ["mbti", "gender", "character"],
+        "sameMbtiCounterpartAllowed": True,
+        "typeCoverage": "16 MBTI types, exactly one man and one woman per type",
+        "mediaPolicy": "Cards declare exact identity slots only; runtime promotion requires separately approved manifest assets and never occurs in this builder.",
+    }
+    package["extensionSources"] = [
+        "content/character_cards.r9/manifest.json",
+        *[f"content/character_cards.r9/{name}" for name in manifest["cardFiles"]],
+    ]
+
+
+def merge_r9_research(sources: dict, manifest: dict, specs: list[dict]) -> None:
+    patch = manifest["researchPatch"]
+    source_index = {source["id"]: source for source in sources["sources"]}
+    for update in patch.get("sourceUpdates") or []:
+        if update["id"] not in source_index:
+            raise ValueError(f"R9 source update references missing source: {update['id']}")
+        source_index[update["id"]].update(deepcopy({key: value for key, value in update.items() if key != "id"}))
+    for new_source in patch.get("newSources") or []:
+        if new_source["id"] in source_index:
+            raise ValueError(f"R9 new source id already exists: {new_source['id']}")
+        sources["sources"].append(deepcopy(new_source))
+        source_index[new_source["id"]] = sources["sources"][-1]
+
+    evidence_ids = {item["id"] for item in sources["evidenceCards"]}
+    for item in patch["typeEvidence"]:
+        evidence = {
+            "id": item["id"],
+            "sourceId": item["sourceId"],
+            "locator": item["locator"],
+            "claim": item["claim"],
+            "evidenceClass": "observable-decision-pattern",
+            "confidence": "high",
+            "rightsStatus": "research-only",
+            "transferRule": item["transferRule"],
+            "prohibitedTransfer": deepcopy(item["prohibitedTransfer"]),
+            "verifiedAt": manifest["generatedAt"],
+        }
+        if evidence["id"] in evidence_ids:
+            raise ValueError(f"duplicate R9 evidence id: {evidence['id']}")
+        sources["evidenceCards"].append(evidence)
+        evidence_ids.add(evidence["id"])
+
+    for spec in specs:
+        authored = spec["authoringEvidence"]
+        evidence = {
+            "id": f"evidence.r9.{spec['id']}.authored-profile",
+            "sourceId": "source.r9-character-authoring",
+            "locator": f"content/character_cards.r9/{spec['_sourceFile']}#cards[id={spec['id']}]",
+            "claim": authored["claim"],
+            "evidenceClass": "observable-decision-pattern",
+            "confidence": "high",
+            "rightsStatus": "project-original",
+            "transferRule": authored["transferRule"],
+            "prohibitedTransfer": deepcopy(authored["prohibitedTransfer"]),
+            "verifiedAt": manifest["generatedAt"],
+        }
+        if evidence["id"] in evidence_ids:
+            raise ValueError(f"duplicate R9 evidence id: {evidence['id']}")
+        sources["evidenceCards"].append(evidence)
+        evidence_ids.add(evidence["id"])
+
+    rights = sources["rightsReview"]
+    cleared = list(rights.get("clearedSourceIdsForAbstractAuthoring") or [])
+    if "source.r9-character-authoring" not in cleared:
+        cleared.append("source.r9-character-authoring")
+    rights["clearedSourceIdsForAbstractAuthoring"] = cleared
+    rights["mbtiBoundary"] = "MBTI sources support only abstract, non-diagnostic preference lenses; they never establish a complete or unique personality."
+    sources["notes"] = list(dict.fromkeys([*(sources.get("notes") or []), *patch.get("notes", [])]))
+    sources["contentVersion"] = manifest["contentVersion"]
+    sources["status"] = "authoring-validated-candidate"
+
+
+def validate_built_r9(package: dict, sources: dict) -> None:
+    cards = package.get("cards") or []
+    if len(cards) != 32:
+        raise ValueError(f"full MBTI package must contain 32 cards, found {len(cards)}")
+    ids = [card["id"] for card in cards]
+    names = [card["names"]["primary"] for card in cards]
+    if len(ids) != len(set(ids)) or len(names) != len(set(names)):
+        raise ValueError("full MBTI package ids and primary names must be unique")
+    if ids[:16] != LEGACY_CARD_IDS:
+        raise ValueError("R9 build changed the existing 16-card order")
+
+    by_type: dict[str, list[dict]] = {}
+    all_event_ids: list[str] = []
+    evidence_ids = {item["id"] for item in sources.get("evidenceCards") or []}
+    source_ids = {item["id"] for item in sources.get("sources") or []}
+    for card in cards:
+        missing = sorted(REQUIRED_CARD_FIELDS - set(card))
+        if missing:
+            raise ValueError(f"card {card.get('id')} missing runtime fields: {missing}")
+        by_type.setdefault(card["mbti"], []).append(card)
+        all_event_ids.append(card["eventPolicy"]["eventId"])
+        for source_id in card["sourceRefIds"]:
+            if source_id not in source_ids:
+                raise ValueError(f"card {card['id']} references unknown source {source_id}")
+        if card["id"] in ids[16:]:
+            if "media" not in card:
+                raise ValueError(f"R9 card {card['id']} missing explicit media boundary")
+            if len(card["fewShots"]) < 4:
+                raise ValueError(f"R9 card {card['id']} has fewer than four few-shots")
+            for shot in card["fewShots"]:
+                trace = shot.get("decisionTrace") or {}
+                if trace.get("visibility") != "observable-public":
+                    raise ValueError(f"R9 few-shot {shot.get('id')} lacks observable decisionTrace")
+                required_trace = {"cue", "interpretation", "chosenTactic", "spokenMove", "repairOrExit"}
+                if not required_trace.issubset(trace):
+                    raise ValueError(f"R9 few-shot {shot.get('id')} has incomplete decisionTrace")
+                if shot["dialogue"] != shot["reply"] or shot["playerMove"] != shot["player"]:
+                    raise ValueError(f"R9 few-shot {shot.get('id')} broke runtime aliases")
+                if not set(shot["sourceEvidenceIds"]).issubset(evidence_ids):
+                    raise ValueError(f"R9 few-shot {shot.get('id')} references unknown evidence")
+    if set(by_type) != set(CANONICAL_MBTI_TYPES):
+        raise ValueError(f"full MBTI package type coverage mismatch: {sorted(by_type)}")
+    for mbti, typed_cards in by_type.items():
+        if len(typed_cards) != 2 or {card["identity"]["gender"] for card in typed_cards} != {"男性", "女性"}:
+            raise ValueError(f"full MBTI package requires one man and one woman for {mbti}")
+    if len(all_event_ids) != len(set(all_event_ids)):
+        raise ValueError("character event ids must remain unique across all 32 cards")
+    for mbti, typed_cards in by_type.items():
+        first, second = typed_cards
+        distinct_pairs = (
+            (first["cognitiveStyle"]["inputFilter"], second["cognitiveStyle"]["inputFilter"], "cognitiveStyle.inputFilter"),
+            (first["cognitiveStyle"]["repairMove"], second["cognitiveStyle"]["repairMove"], "cognitiveStyle.repairMove"),
+            (first["interactionStrategies"], second["interactionStrategies"], "interactionStrategies"),
+            (first["memoryPolicy"]["remember"], second["memoryPolicy"]["remember"], "memoryPolicy.remember"),
+            (
+                [value["speechMove"] for value in first["reactionMatrix"].values()],
+                [value["speechMove"] for value in second["reactionMatrix"].values()],
+                "reactionMatrix.*.speechMove",
+            ),
+        )
+        for first_value, second_value, label in distinct_pairs:
+            if first_value == second_value:
+                raise ValueError(f"same-type {mbti} pair still shares {label}")
+    distinction_cues = [card["dialoguePolicy"].get("distinctiveVoiceGate") for card in cards]
+    if any(not cue for cue in distinction_cues) or len(distinction_cues) != len(set(distinction_cues)):
+        raise ValueError("all 32 cards require a unique dialoguePolicy.distinctiveVoiceGate")
+    for first, second in combinations(cards, 2):
+        sequence_ratio, trigram_jaccard = distinction_similarity(first, second)
+        same_type = first["mbti"] == second["mbti"]
+        sequence_limit = SAME_TYPE_MAX_SEQUENCE_RATIO if same_type else GLOBAL_MAX_SEQUENCE_RATIO
+        trigram_limit = SAME_TYPE_MAX_TRIGRAM_JACCARD if same_type else GLOBAL_MAX_TRIGRAM_JACCARD
+        if sequence_ratio >= sequence_limit or trigram_jaccard >= trigram_limit:
+            scope = f"same-type {first['mbti']}" if same_type else "global"
+            raise ValueError(
+                f"{scope} near-duplicate character cores: {first['id']} / {second['id']} "
+                f"sequence={sequence_ratio:.3f} trigram={trigram_jaccard:.3f}"
+            )
+    if package["rosterPolicy"].get("librarySize") != 32 or package["rosterPolicy"].get("runCastSize") != 8:
+        raise ValueError("R9 rosterPolicy must declare a 32-card library and eight-person run")
+
+
 def main() -> None:
+    existing_legacy_cards = None
+    if TARGET.exists():
+        existing_target = json.loads(TARGET.read_text(encoding="utf-8"))
+        existing_cards = existing_target.get("cards") or []
+        if len(existing_cards) >= 16:
+            existing_ids = [card.get("id") for card in existing_cards[:16]]
+            if existing_ids != LEGACY_CARD_IDS:
+                raise ValueError(f"refusing to overwrite a target with changed legacy order: {existing_ids}")
+            existing_legacy_cards = deepcopy(existing_cards[:16])
+
     base = json.loads(SOURCE.read_text(encoding="utf-8"))
     package = deepcopy(base)
     package["schemaVersion"] = 2
     package["contentVersion"] = "3.0.0-local-research"
     package["status"] = "local-research-candidate"
     package["evidenceLayers"] = ["source-document", "runtime-adaptation", "mbti-preference", "public-domain-literary-anchor", "original-few-shot"]
-    package["generationBoundary"] = "DeepSeek performs dialogue, attitude, memory interpretation and a bounded proposal; the deterministic engine owns committed state."
+    package["generationBoundary"] = "The selected LLM provider performs dialogue, attitude, memory interpretation and a bounded proposal; the deterministic engine owns committed state."
     for card in package["cards"]:
         cid = card["id"]
         card["sourceProfile"] = SOURCE_PROFILES[cid]
@@ -395,7 +966,10 @@ def main() -> None:
         "mediaPolicy": "新角色在approved动态素材到位前只使用明确标记的静态占位；运行时不触发生成。",
     }
     humanlike_overlay = apply_humanlike_overlay(package)
-    TARGET.write_text(json.dumps(package, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    r9_manifest, r9_specs = load_r9_extension()
+    apply_r9_extension(package, r9_manifest, r9_specs)
+    legacy_before_distinction = deepcopy(package["cards"][:16])
+    apply_distinction_overlay(package)
 
     old_sources = json.loads((ROOT / "content" / "research_sources.v2.json").read_text(encoding="utf-8"))
     sources = deepcopy(old_sources)
@@ -403,7 +977,7 @@ def main() -> None:
     sources["notes"] = [
         "原始人物设定DOCX已重新定位并完成文本核对。",
         "人物事实、运行时改编、MBTI偏好和文学风味分层保存；后两者不能覆盖人物事实。",
-        "文学微引文只作为作者研究锚点，DeepSeek不得复制或仿写原句。",
+        "文学微引文只作为作者研究锚点，运行时模型不得复制或仿写原句。",
         "正式版扩展为每个现有MBTI一男一女；新增八人是独立原创人物，不继承同型异性角色的身世与秘密。",
     ]
     sources["sources"] = [
@@ -418,8 +992,24 @@ def main() -> None:
         audited_research = humanlike_overlay["researchPatch"]
         for field in ("schemaVersion", "contentVersion", "status", "notes", "sources", "evidenceCards", "rightsReview"):
             sources[field] = deepcopy(audited_research[field])
+    merge_r9_research(sources, r9_manifest, r9_specs)
+    validate_built_r9(package, sources)
+
+    if (
+        existing_legacy_cards is not None
+        and package["cards"][:16] != existing_legacy_cards
+        and legacy_before_distinction != existing_legacy_cards
+    ):
+        raise ValueError(
+            "R9 build would rewrite the existing 16 cards outside the reviewed distinction migration"
+        )
+
+    TARGET.write_text(json.dumps(package, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     SOURCES_TARGET.write_text(json.dumps(sources, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(f"built {len(package['cards'])} cards -> {TARGET.name}")
+    print(
+        f"built {len(package['cards'])} cards across {len(CANONICAL_MBTI_TYPES)} MBTI types "
+        f"-> {TARGET.name}; research evidence={len(sources['evidenceCards'])}"
+    )
 
 
 if __name__ == "__main__":

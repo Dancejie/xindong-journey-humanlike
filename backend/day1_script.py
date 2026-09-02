@@ -29,7 +29,7 @@ from backend.game_content import (
 
 
 FORBIDDEN_SURFACE_TERMS = (
-    "钥匙", "关系数值", "状态参数", "DeepSeek", "Agent", "API", "剧情节点", "memory", "ta",
+    "钥匙", "关系数值", "状态参数", "DeepSeek", "Dots", "dots", "Agent", "API", "剧情节点", "memory", "ta",
     "行动目标", "关系目标", "共同信任目标", "赢任务", "借任务看清一个人",
     "并不存在的", *MECHANICAL_COPY_TERMS,
 )
@@ -55,7 +55,7 @@ INTRO_REASON_PATTERNS = (
 UNDECLARED_PROP_TERMS = (
     "图纸", "行程单", "机械锁", "说明书", "线材", "接线", "工具抽屉", "桌签", "旧手机",
     "土豆", "胡萝卜", "青椒", "番茄", "薄荷", "围裙", "菜刀", "录音笔", "话筒", "麦克风",
-    "插画本", "馅料", "酱汁", "花灯", "酒杯",
+    "插画本", "馅料", "酱汁", "花灯", "酒杯", "葱", "盘子", "餐具", "砧板", "风铃",
 )
 PROTAGONIST_SURFACE_ANCHORS = {
     "shenmo": ["前提", "确认", "具体", "先说清"],
@@ -84,6 +84,30 @@ INTRO_SAFE_BACKGROUND.update({
     "wenxu": "是城市气候数据研究员", "hechuan": "是纪录片剪辑师", "peiran": "是儿童博物馆体验策展人",
     "lichuan": "是精品酒店餐饮运营经理", "qiaolan": "是舞台机械工程师",
 })
+
+# R9 expands the library beyond the sixteen authored legacy roles above.  Keep
+# the authored lines, but derive truthful prompt anchors for every additional
+# card so Day 1 never fails with a missing-key error and never invents a job.
+for _card in CHARACTER_CARD_MAP.values():
+    _character_id = _card["id"]
+    _facts = _card.get("sourceProfile", {}).get("facts", {})
+    _occupation = str(_facts.get("occupation") or "").strip()
+    _occupation_known = bool(_occupation) and not any(
+        _term in _occupation for _term in ("待剧情", "待正式确认", "运行时职业待", "待公开")
+    )
+    _interest = str(_card.get("drives", {}).get("independentInterest") or "愿意从一起生活的小事认识人").strip("。")
+    INTRO_BACKGROUND_ANCHORS.setdefault(
+        _character_id,
+        (_occupation,) if _occupation_known else ("平时", "日常", "喜欢"),
+    )
+    INTRO_SAFE_BACKGROUND.setdefault(
+        _character_id,
+        f"是{_occupation}" if _occupation_known else f"平时{_interest}",
+    )
+    PROTAGONIST_SURFACE_ANCHORS.setdefault(
+        _character_id,
+        ["具体", "一起", "我想", "你愿意"],
+    )
 TARGETED_CHOICE_NODE_IDS = {"cast-first-impressions", "icebreaker-choice"}
 
 
@@ -305,7 +329,7 @@ def validate_day1_script(snapshot: dict[str, Any], payload: dict[str, Any]) -> d
     perspective_name = CHARACTER_MAP[perspective_id]["name"]
     raw_nodes = payload.get("nodes")
     if not isinstance(raw_nodes, dict) or set(raw_nodes) != set(DAY1_SCRIPT_NODE_IDS):
-        raise ValueError("DeepSeek 台本节点与确定性骨架不一致")
+        raise ValueError("模型台本节点与确定性骨架不一致")
     normalized: dict[str, Any] = {}
     cast_ids = active_cast_ids(state)
     allowed_speakers = {"narrator", "program", *(character_id for character_id in cast_ids if character_id != perspective_id)}
@@ -357,8 +381,16 @@ def validate_day1_script(snapshot: dict[str, Any], payload: dict[str, Any]) -> d
                 if target_id not in cast_ids or target_id == perspective_id:
                     raise ValueError(f"{node_id} 的目标必须是非主角嘉宾")
                 targets.append(target_id)
-                target_name = CHARACTER_MAP[target_id]["name"]
-                if target_name not in label:
+                target_card = CHARACTER_CARD_MAP[target_id]
+                target_names = {
+                    str(target_card.get("names", {}).get("primary") or "").strip(),
+                    *(
+                        str(alias).strip()
+                        for alias in target_card.get("names", {}).get("aliases", [])
+                        if str(alias).strip()
+                    ),
+                }
+                if not any(name and name in label for name in target_names):
                     raise ValueError(f"{node_id}.{blueprint['id']} 只给了人物目标，没有在选项中写出姓名和行动")
                 if node_id == "cast-first-impressions" and not any(
                     marker in label + hint for marker in ("介绍", "说", "听", "接话", "认真", "安静", "照顾", "好奇", "记住", "想再", "之后", "晚餐", "三分钟")
@@ -393,7 +425,7 @@ def validate_day1_script(snapshot: dict[str, Any], payload: dict[str, Any]) -> d
             "speakerId": speaker_id, "action": action, "choices": choices,
         }
     return {
-        "schemaVersion": 1, "source": "deepseek", "perspectiveCharacterId": perspective_id,
+        "schemaVersion": 1, "source": "llm", "perspectiveCharacterId": perspective_id,
         "generatedAt": utc_now(), "nodes": normalized,
     }
 
@@ -431,10 +463,11 @@ def build_day1_node_messages(snapshot: dict[str, Any], node_id: str) -> list[dic
     )
     contract = {
         "node": {
+            "requiredKeys": ["title", "text", "textBeats", "speakerId", "action", "choices"],
             "title": "4-36字真人恋综小标题",
             "text": "30-180字，具体交代现场、因果和玩家下一步",
             "textBeats": "2-4条8-70字短beat；按阅读顺序拆开text，不新增事实",
-            "speakerId": "narrator、program或非主角同场嘉宾ID",
+            "speakerId": "必须输出一个标量字符串；优先 narrator 或 program；不得省略、不得输出数组或中文姓名",
             "action": "4-80字镜头可见动作",
             "choices": [
                 {
@@ -447,6 +480,7 @@ def build_day1_node_messages(snapshot: dict[str, Any], node_id: str) -> list[dic
     }
     system = """你是《心动之旅》的现场台本编辑。只改写当前一个节点的可见文案，不决定路线、任务结果或媒体路径。
 playerIdentity 是最高优先级硬约束：玩家正在扮演 protagonistId 对应的人物。“你”就是该人物本人，场内绝不存在一个独立于“你”的同名 NPC。不得写“你和主角名”、不得让主角名转身等你或对你说话，也不得给主角虚构职业。
+requiredVoiceAnchors 只约束措辞和观察角度，不是现场道具白名单。比如“声音、录音、故事”可以影响表达方式，但绝不能因此凭空出现录音笔、话筒、手机、声音日记或任何未声明物件。
 	必须结合主角完整人物卡、已经发生的选择、当前事件目标和相关人物记忆写成真人恋综口语；不能把同一套固定台本只替换名字。
 	retrievedFewShotStructures 是服务端按当前 node、上一轮玩家原话与现场检索出的 2-3 条该主角原创微场景。所有旁白选项必须迁移其可观察 cue→判断→策略→表达→修复结构，但不得逐字复刻 dialogueExample，不得调用或模仿研究来源原文。
 	choiceHistory 中的 customText/playerExpression 是玩家在上一步亲自输入的原话，只能作为“主角刚刚这样说/这样选择”的引用证据；不得把其中尚未发生的愿望、猜测或夸张表述升级为客观场景事实，也不得改变确定性路线、任务结果或人物关系。
@@ -459,9 +493,10 @@ currentLiteralContract.naturalReferenceIntents 是基于人物卡校过事实的
 cast-first-impressions 必须先明确主角之后又听完其余七位嘉宾的介绍，再给出群像小结和一条会在晚餐、三分钟单聊或心动短信中验证的伏笔。三项都要直接写不同嘉宾姓名、从其公开自我介绍听到的具体依据、以及主角为什么想继续留意；这只是主角第一印象，不是客观判词。
 icebreaker-choice 必须用大白话写清三张场景卡分别对应地点和嘉宾、选完去哪里找谁、为什么聊三分钟、回来怎样算完成。三项直接写不同嘉宾姓名和开场动作，不能只交人物头像、MBTI或抽象性格。
 只用已给事实与记忆，不得编造职业、年龄、创伤、前任、隐藏规则、地图、钥匙或线索。职业未确认就只说人物卡已有日常背景。
-只写 deterministicNode.declaredSceneFacts 已声明的任务与 currentParticipants。人物卡 currentGoals/independentInterest 不能冒充已经发生的现场事实。不得新增替代小游戏、精确钟点、人数、具体食材、具体饮品、道具、工作人员台词或第三位搭档。team-up 只可从备菜、布置餐桌、核对饮品中选一件生活分工；不能改成理线、修锁、找卡片或检查工具。hint 是给玩家看的当下取舍，不是 NPC 接下来会说的台词或反应。
+只写 deterministicNode.declaredSceneFacts 已声明的任务与 currentParticipants。人物卡 currentGoals/independentInterest 不能冒充已经发生的现场事实。不得新增替代小游戏、精确钟点、人数、具体食材、具体饮品、道具、工作人员台词或第三位搭档。team-up 只可从备菜、布置餐桌、核对饮品中选一件生活分工；不能改成理线、修锁、找卡片或检查工具。action 不确定时逐字使用 deterministicNode.safeActionFallback，禁止为了画面感添加围裙、砧板、餐具、风铃或人物随身物。hint 是给玩家看的当下取舍，不是 NPC 接下来会说的台词或反应。
 title/text/action 和所有 hint 都用“你”称呼主角，绝不出现 protagonistName，也不能用“他/她选择了”旁观主角；只有 introductions 的第一人称 label 可以说出 protagonistName。introductions 不得描述某位其他嘉宾刚才递水、说话或做过什么，因为这些动作没有在当前事实中发生。
 当前现场没有主持人、导演或工作人员出镜说话。不要把“节目组请大家介绍/规则说明”改写成某位主持人或导演在场。
+根对象必须逐项包含 title、text、textBeats、speakerId、action、choices 六个键；即使使用默认旁白也必须显式输出 "speakerId": "narrator"。
 choice id、intent、next、patch、节点顺序、目标规则和媒体全部由引擎拥有，不得改写。只输出一个JSON对象。"""
     guided_id = state.get("guidedTargetCharacterId")
     guided_character = _public_cast_card(CHARACTER_CARD_MAP[guided_id]) if guided_id in CHARACTER_CARD_MAP and guided_id != perspective_id else None
@@ -472,7 +507,7 @@ choice id、intent、next、patch、节点顺序、目标规则和媒体全部�
             "literalRule": f"玩家就是{protagonist_name}；旁白用‘你’，不能写‘你和{protagonist_name}’，不能让{protagonist_name}作为NPC对你行动或说话",
             "confirmedOccupation": _public_cast_card(protagonist).get("publicFacts", {}).get("occupation"),
             "requiredVoiceAnchors": PROTAGONIST_SURFACE_ANCHORS[perspective_id],
-            "voiceAnchorRule": "三个选项中至少一条自然带出一个锚点；不能把锚点当标签硬塞",
+            "voiceAnchorRule": "三个选项中至少一条自然带出一个锚点；锚点只用于措辞和观察角度，绝不能转化成现场物件、人物动作或新事实",
         },
         "currentLiteralContract": {
             "name": protagonist_name, "mbti": protagonist["mbti"],
@@ -506,7 +541,16 @@ choice id、intent、next、patch、节点顺序、目标规则和媒体全部�
         ],
         "firstImpressionSeed": state.get("firstImpressionSeed"),
         "activeStoryMission": state.get("storyMission"),
-        "deterministicNode": _story_skeleton()[DAY1_SCRIPT_NODE_IDS.index(node_id)],
+        "transitionRule": (
+            "team-up 发生在集体自我介绍、听完其他人介绍、三分钟破冰和首次单独寒暄之后；开头必须承接刚完成的破冰/私聊，绝不能写刚做完、刚结束或刚说完自我介绍"
+            if node_id == "team-up" else "承接上一确定性节点，不得跳过中间阶段"
+        ),
+        "forbiddenUndeclaredPropTerms": list(UNDECLARED_PROP_TERMS),
+        "propRule": "以上词只有在 deterministicNode.declaredSceneFacts、choiceHistory 或 relevant memory 已逐字声明时才可出现；否则 title、text、textBeats、action、choices 全部禁止使用，也禁止换成同类新道具",
+        "deterministicNode": {
+            **_story_skeleton()[DAY1_SCRIPT_NODE_IDS.index(node_id)],
+            "safeActionFallback": str(blueprint.get("action") or "你停在当前场景里，准备做出下一步选择。"),
+        },
     }
     return [
         {"role": "system", "content": system},
@@ -522,6 +566,12 @@ def validate_day1_node_script(snapshot: dict[str, Any], node_id: str, payload: d
     raw_node = payload.get("node") if isinstance(payload.get("node"), dict) else payload
     if not isinstance(raw_node, dict):
         raise ValueError("当前节点台本不是对象")
+    raw_node = deepcopy(raw_node)
+    # speakerId is surface attribution, not authored story state. Some
+    # OpenAI-compatible models omit the default narrator even when the output
+    # contract asks for it, so normalize that one safe default deterministically.
+    if not str(raw_node.get("speakerId") or "").strip():
+        raw_node["speakerId"] = "narrator"
     visible_copy = "".join(str(raw_node.get(field) or "") for field in ("title", "text", "action"))
     visible_copy += "".join(str(item or "") for item in raw_node.get("textBeats", []) if isinstance(item, str))
     visible_copy += "".join(
@@ -535,12 +585,17 @@ def validate_day1_node_script(snapshot: dict[str, Any], node_id: str, payload: d
     }, ensure_ascii=False)
     if node_id == "guided-chat":
         current_evidence += json.dumps(NODES["icebreaker-choice"], ensure_ascii=False)
+    elif node_id == "team-up":
+        current_evidence += json.dumps(
+            {"icebreaker-choice": NODES["icebreaker-choice"], "guided-chat": NODES["guided-chat"]},
+            ensure_ascii=False,
+        )
     for invented_role in ("导演组", "导演", "主持人", "工作人员", "服务生", "管家"):
         if invented_role in visible_copy and invented_role not in blueprint_copy:
             raise ValueError(f"{node_id} 新增了未声明的现场角色：{invented_role}")
     if any(term in visible_copy for term in ("统调度", "把话来", "来清楚", "江米")):
         raise ValueError(f"{node_id} 出现明显病句")
-    if node_id in {"guided-chat", "team-up"} and any(term in visible_copy for term in ("任务卡", "卡片", "规则卡")):
+    if node_id in {"guided-chat", "team-up"} and any(term in visible_copy for term in ("任务卡", "卡片", "规则卡", "场景卡")):
         raise ValueError(f"{node_id} 新增了确定性骨架外的任务卡")
     if node_id == "icebreaker-choice" and re.search(r"刚才在(?:修|找|检查|破解)", visible_copy):
         raise ValueError("破冰选项把人物卡兴趣写成了刚刚发生的现场动作")
@@ -555,7 +610,7 @@ def validate_day1_node_script(snapshot: dict[str, Any], node_id: str, payload: d
             raise ValueError("破冰规则没有说清三张卡、三分钟和回来后的完成条件")
     if node_id == "callback" and "收到" in visible_copy:
         raise ValueError("清晨回声不能假定主角昨晚一定收到短信")
-    if node_id == "team-up" and "刚结束自我介绍" in visible_copy:
+    if node_id == "team-up" and re.search(r"刚(?:结束|做完|说完).{0,8}(?:自我介绍|自己的来意)|自我介绍.{0,8}刚(?:结束|完成)", visible_copy):
         raise ValueError("组队节点跳过了已经发生的破冰交流")
     if node_id == "anonymous-letter" and "锁手机" in visible_copy:
         raise ValueError("心动短信节点新增了未声明的锁机规则")
@@ -580,11 +635,13 @@ def install_day1_node_script(
     if state is None:
         raise ValueError("剧情状态不存在")
     node = validate_day1_node_script(state, node_id, payload)
+    provenance = generator or {"provider": "llm", "model": "unknown"}
+    provider = str(provenance.get("provider") or "llm").strip().lower()
     next_state = deepcopy(state)
     next_state["scriptFlavor"]["nodes"][node_id] = node
     next_state["scriptFlavor"].setdefault("contextualNodes", {})[node_id] = {
-        "source": "deepseek-contextual", "generatedAt": utc_now(),
-        "generator": generator or {"provider": "deepseek", "model": "configured"},
+        "source": f"{provider}-contextual", "generatedAt": utc_now(),
+        "generator": {"provider": provider, "model": str(provenance.get("model") or "unknown")},
         "atRevision": state["revision"],
     }
     return next_state
@@ -606,7 +663,7 @@ def install_day1_script(snapshot: dict[str, Any], payload: dict[str, Any] | None
 
 
 def validate_cached_day1_script_package(snapshot: dict[str, Any], package: dict[str, Any]) -> dict[str, Any]:
-    """Validate one pre-generated DeepSeek flavor with provenance evidence."""
+    """Validate one pre-generated model flavor with provenance evidence."""
     state = migrate_snapshot(snapshot)
     if state is None:
         raise ValueError("剧情状态不存在")
@@ -645,9 +702,10 @@ def validate_cached_day1_script_package(snapshot: dict[str, Any], package: dict[
             "icebreaker-choice": "engine-cast-contextualized",
         })
     flavor = validate_day1_script(state, raw_payload)
+    cached_provider = str(generator["provider"]).strip().lower()
     flavor.update({
-        "source": "deepseek-cached", "generatedAt": generated_at,
-        "generator": {"provider": str(generator["provider"]), "model": str(generator["model"])},
+        "source": f"{cached_provider}-cached", "generatedAt": generated_at,
+        "generator": {"provider": cached_provider, "model": str(generator["model"])},
         "characterCardContentVersion": current_card_version,
         "sourceCharacterCardContentVersion": package_card_version,
         "nodeSources": node_sources,

@@ -15,7 +15,6 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from backend.agent_prompt import extract_json
-from backend.app import _llm_text
 from backend.day1_script import (
     _validate_introduction_choice,
     _validate_surface_text,
@@ -24,6 +23,8 @@ from backend.day1_script import (
     validate_day1_script,
 )
 from backend.game_content import CARD_PACKAGE, CHARACTER_CARDS, CHARACTER_MAP, NODES, active_cast_ids, build_fallback_script_flavor, create_snapshot, utc_now
+from backend.llm_provider import call_text, provider_config
+from scripts.llm_env import load_local_llm_env
 
 
 def repair_surface_fields(snapshot: dict[str, Any], payload: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
@@ -97,7 +98,7 @@ async def generate_one(character_id: str, semaphore: asyncio.Semaphore) -> tuple
         card = next(card for card in CHARACTER_CARDS if card["id"] == character_id)
         for attempt in range(3):
             try:
-                raw = await _llm_text(messages, max_tokens=6000)
+                raw = (await call_text(messages, max_tokens=6000)).text
                 payload = extract_json(raw)
                 payload, repairs = repair_surface_fields(snapshot, payload)
                 flavor = validate_day1_script(snapshot, payload)
@@ -145,7 +146,7 @@ async def polish_one(character_id: str, original: dict[str, Any], semaphore: asy
         card = next(card for card in CHARACTER_CARDS if card["id"] == character_id)
         for attempt in range(3):
             try:
-                raw = await _llm_text(messages, max_tokens=6000)
+                raw = (await call_text(messages, max_tokens=6000)).text
                 payload = extract_json(raw)
                 payload, repairs = repair_surface_fields(snapshot, payload)
                 flavor = validate_day1_script(snapshot, payload)
@@ -165,6 +166,7 @@ async def polish_one(character_id: str, original: dict[str, Any], semaphore: asy
 
 
 async def generate_cache(concurrency: int, existing: dict[str, Any] | None = None) -> dict[str, Any]:
+    config = provider_config()
     semaphore = asyncio.Semaphore(max(1, concurrency))
     character_ids = [card["id"] for card in CHARACTER_CARDS]
     if existing is None:
@@ -179,10 +181,7 @@ async def generate_cache(concurrency: int, existing: dict[str, Any] | None = Non
         "schemaVersion": 1,
         "generatedAt": generated_at,
         "characterCardContentVersion": CARD_PACKAGE["contentVersion"],
-        "generator": {
-            "provider": "deepseek",
-            "model": os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"),
-        },
+        "generator": config.provenance,
         "flavors": dict(results),
     }
 
@@ -192,9 +191,19 @@ def main() -> int:
     parser.add_argument("--output", type=Path, default=ROOT / "content" / "day1_script_flavors.v1.json")
     parser.add_argument("--concurrency", type=int, default=2)
     parser.add_argument("--polish-existing", action="store_true")
+    parser.add_argument("--env-file")
+    parser.add_argument("--provider", choices=("deepseek", "dots"))
     args = parser.parse_args()
-    if not os.getenv("DEEPSEEK_API_KEY", "").strip():
-        raise SystemExit("DEEPSEEK_API_KEY is not configured")
+    try:
+        load_local_llm_env(ROOT, args.env_file)
+    except FileNotFoundError as error:
+        raise SystemExit(str(error)) from error
+    if args.provider:
+        os.environ["LLM_PROVIDER"] = args.provider
+    try:
+        provider_config()
+    except RuntimeError as error:
+        raise SystemExit(str(error)) from error
     existing = None
     if args.polish_existing:
         existing = json.loads(args.output.read_text(encoding="utf-8"))
@@ -206,6 +215,7 @@ def main() -> int:
     print(json.dumps({
         "output": str(args.output),
         "flavorCount": len(package["flavors"]),
+        "provider": package["generator"]["provider"],
         "model": package["generator"]["model"],
     }, ensure_ascii=False))
     return 0

@@ -10,7 +10,7 @@ from typing import Optional
 
 import httpx
 import psycopg
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from psycopg import sql
@@ -45,6 +45,14 @@ from backend.game_content import (
     normalize_conversation_context,
     project_view,
     validate_agent_turn,
+)
+from backend.llm_provider import (
+    LLMProviderError,
+    LLMTextResult,
+    UnsupportedProviderError,
+    call_text,
+    provider_config,
+    provider_status,
 )
 from backend.story_director import (
     build_story_director_messages,
@@ -135,25 +143,43 @@ def _require_user(decrypted_userinfo: Optional[str], client_id: Optional[str] = 
     raise HTTPException(status_code=401, detail="请先通过小红书内网身份登录")
 
 
-async def _llm_text(messages: list[dict], max_tokens: int = 500) -> str:
-    deepseek_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
-    if not deepseek_key:
-        raise RuntimeError("DeepSeek is not configured")
-    base_url = os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com").rstrip("/")
-    model = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
-    async with httpx.AsyncClient(timeout=60) as client:
-        response = await client.post(
-            f"{base_url}/chat/completions",
-            headers={"Authorization": f"Bearer {deepseek_key}", "Content-Type": "application/json"},
-            json={"model": model, "messages": messages, "max_tokens": max_tokens, "stream": False, "thinking": {"type": "disabled"}},
-        )
-    response.raise_for_status()
-    data = response.json()
-    choices = data.get("choices") or []
-    text = str(choices[0].get("message", {}).get("content") or "").strip() if choices else ""
-    if not text:
-        raise RuntimeError("DeepSeek returned no output text")
-    return text
+async def _llm_text(
+    messages: list[dict], max_tokens: int = 500, provider: str | None = None,
+) -> LLMTextResult:
+    """Compatibility seam for tests and offline scripts; networking lives in the adapter."""
+    return await call_text(messages, max_tokens=max_tokens, provider=provider)
+
+
+def _coerce_llm_result(result: LLMTextResult | str, provider: str | None) -> tuple[str, dict[str, str]]:
+    """Keep older AsyncMock fixtures valid while runtime calls retain provenance."""
+    if isinstance(result, LLMTextResult):
+        return result.text, result.provenance
+    config = provider_config(provider, require_configured=False)
+    return str(result), config.provenance
+
+
+def _request_provider(requested: str | None, *, required: bool) -> str:
+    """Freeze one allowlisted provider for the whole request before any mutation."""
+    explicit = bool(str(requested or "").strip())
+    try:
+        config = provider_config(requested, require_configured=False)
+    except UnsupportedProviderError as error:
+        status_code = 400 if explicit else 503
+        raise HTTPException(status_code=status_code, detail="模型通道配置无效") from error
+    if not config.configured and (explicit or required):
+        status_code = 400 if explicit else 503
+        raise HTTPException(status_code=status_code, detail="所选模型通道尚未配置")
+    return config.name
+
+
+def _safe_provider_error_kind(error: Exception) -> str:
+    if isinstance(error, httpx.HTTPStatusError):
+        return f"http-{error.response.status_code}"
+    if isinstance(error, httpx.HTTPError):
+        return "http-network"
+    if isinstance(error, (json.JSONDecodeError, LLMProviderError, RuntimeError)):
+        return "provider-response"
+    return "runtime"
 
 
 def _load_run(conn: psycopg.Connection, run_id: str, owner_id: str, for_update: bool = False) -> dict:
@@ -185,7 +211,13 @@ def _record_event(conn: psycopg.Connection, run_id: str, owner_id: str, event_ty
     )
 
 
-async def _agent_turn(character: dict, snapshot: dict, message: str, conversation_context: dict | None = None) -> dict:
+async def _agent_turn(
+    character: dict,
+    snapshot: dict,
+    message: str,
+    conversation_context: dict | None = None,
+    provider: str | None = None,
+) -> tuple[dict, dict[str, str]]:
     card = CHARACTER_CARD_MAP[character["id"]]
     player_card = CHARACTER_CARD_MAP[snapshot["player"]["perspectiveCharacterId"]]
     messages = build_agent_messages(card, snapshot, message, player_card, conversation_context)
@@ -193,87 +225,134 @@ async def _agent_turn(character: dict, snapshot: dict, message: str, conversatio
     for attempt in range(2):
         try:
             payload = None
-            raw = await _llm_text(messages, max_tokens=760)
+            result = await _llm_text(messages, max_tokens=760, provider=provider)
+            raw, generator = _coerce_llm_result(result, provider)
             payload = extract_json(raw)
-            validate_agent_turn(card, payload, snapshot, message)
-            return payload
+            validated = validate_agent_turn(
+                card, payload, snapshot, message, provider=generator["provider"],
+            )
+            return validated, generator
         except Exception as error:
             if attempt == 0:
-                messages = [*messages, {"role": "user", "content": f"上一轮未通过人物与时间线合同：{error}。保持同一人物判断，重写完整 JSON；只使用当前已发生事实。若原因涉及重复，必须避开 usedTopics，并贡献一个新的具体事实、轻巧反应或可执行行动。"}]
+                messages = [*messages, {"role": "user", "content": f"上一轮未通过人物与时间线合同：{error}。保持同一人物判断，重写完整 JSON；只使用当前已发生事实。若报错涉及设施故障或物件状态，完全删除灯架、门框、挂钩、门锁、松动、晃动、卡住、维修和固定等未在 scene.sceneText 中出现的内容；被问‘注意到什么’时，改答 scene 中已经出现的人、声音、光线、海风或角色自己的真实反应，不要把观察写成排查故障。逐字段给出最终值：attitude、intentId、memory.kind 必须各为一个标量字符串，绝不能返回数组、候选列表或说明对象；proposedEventId 只能是 null 或一个字符串。若原因涉及重复，必须避开 usedTopics，并贡献一个新的具体事实、轻巧反应或可执行行动。"}]
                 continue
             if isinstance(payload, dict) and any(term in str(error) for term in ("建议语", "followup", "mainline")):
                 payload.pop("suggestions", None)
-                validate_agent_turn(card, payload, snapshot, message)
-                return payload
-            raise
-    raise RuntimeError("DeepSeek 角色判断没有通过合同")
+                validated = validate_agent_turn(
+                    card, payload, snapshot, message, provider=generator["provider"],
+                )
+                return validated, generator
+            raise RuntimeError("模型角色判断没有通过人物与时间线合同") from error
+    raise RuntimeError("模型角色判断没有通过合同")
 
 
-async def _generate_day1_node_script(snapshot: dict, node_id: str) -> dict | None:
+async def _generate_day1_node_script(
+    snapshot: dict, node_id: str, provider: str | None = None,
+) -> tuple[dict, dict[str, str]] | None:
     """Generate only surface copy for the deterministic next node."""
-    if not os.getenv("DEEPSEEK_API_KEY", "").strip():
+    config = provider_config(provider, require_configured=False)
+    if not config.configured:
         return None
     messages = build_day1_node_messages(snapshot, node_id)
     for attempt in range(2):
         try:
-            raw = await _llm_text(messages, max_tokens=1900)
+            result = await _llm_text(messages, max_tokens=1900, provider=config.name)
+            raw, generator = _coerce_llm_result(result, config.name)
             payload = extract_json(raw)
             normalized = validate_day1_node_script(snapshot, node_id, payload)
-            return {"node": normalized}
+            return {"node": normalized}, generator
         except Exception as error:
             if attempt == 0:
                 protagonist_name = CHARACTER_MAP[snapshot["player"]["perspectiveCharacterId"]]["name"]
                 messages = [*messages, {"role": "user", "content": (
                     f"上一稿未通过当前节点合同：{error}。保持人物卡和固定 choice id，只重写完整 node JSON。"
                     f"身份再次确认：玩家就是{protagonist_name}，‘你’就是{protagonist_name}，场内没有第二个{protagonist_name}，不得让{protagonist_name}作为NPC对你行动或说话。"
+                    "把报错指出的未声明物件从 title、text、textBeats、action 和全部 choices 中彻底删除；不得用另一个同类物件替换。人物语言锚点只影响措辞，不能变成现场道具或新事实。"
+                    "如果 action 涉及任何不确定物件，直接逐字使用 deterministicNode.safeActionFallback。"
+                    "完整 JSON 根对象必须保留 title、text、textBeats、speakerId、action、choices 六个键；speakerId 不确定时固定写 narrator，不能省略。"
                 )}]
     return None
 
 
-async def _generate_day1_script(snapshot: dict) -> dict:
+async def _generate_day1_script(snapshot: dict, provider: str | None = None) -> dict:
     """Install opening copy without putting a full LLM round on the start path.
 
-    Existing reviewed DeepSeek cache remains the preferred flavor.  A newly
-    added protagonist may not have a cached package yet; in that case the
-    deterministic character-card fallback is good enough to open the door
-    immediately.  Later committed nodes can still request their scoped
-    DeepSeek rewrite through ``_generate_day1_node_script``.
+    An existing reviewed cache is used only when its provider matches the
+    request. A newly added protagonist, or a Dots comparison without a Dots
+    cache, starts from the deterministic character-card fallback immediately.
+    Later committed nodes can still request their scoped provider rewrite.
     """
+    selected_provider = provider_config(provider, require_configured=False).name
     cached = install_cached_day1_script(snapshot)
-    if cached is not None:
+    cached_provider = str(
+        ((cached or {}).get("scriptFlavor") or {}).get("generator", {}).get("provider") or ""
+    ).strip().lower()
+    if cached is not None and cached_provider == selected_provider:
         return cached
     return install_day1_script(snapshot, None)
 
 
-async def _chat_opening(card: dict, snapshot: dict) -> dict:
-    fallback = fallback_chat_opening(card, snapshot)
-    if not os.getenv("DEEPSEEK_API_KEY", "").strip():
-        return fallback
+async def _chat_opening(
+    card: dict, snapshot: dict, provider: str | None = None,
+) -> tuple[dict, dict[str, str] | None]:
     player_card = CHARACTER_CARD_MAP[snapshot["player"]["perspectiveCharacterId"]]
+    fallback = fallback_chat_opening(card, snapshot, player_card)
+    config = provider_config(provider, require_configured=False)
+    if not config.configured:
+        return fallback, None
     messages = build_chat_opening_messages(card, snapshot, player_card)
     for attempt in range(2):
         try:
-            raw = await _llm_text(messages, max_tokens=520)
-            return validate_chat_opening(card, snapshot, extract_json(raw), player_card)
+            result = await _llm_text(messages, max_tokens=520, provider=config.name)
+            raw, generator = _coerce_llm_result(result, config.name)
+            return validate_chat_opening(card, snapshot, extract_json(raw), player_card), generator
         except Exception as error:
             if attempt == 0:
-                messages = [*messages, {"role": "user", "content": f"上一稿未通过首聊合同：{error}。请保持角色身份，并让建议语严格使用玩家人物卡，重写完整 JSON。"}]
-    return fallback
+                player_name = player_card["names"]["primary"]
+                player_mbti = player_card["mbti"]
+                npc_name = card["names"]["primary"]
+                messages = [*messages, {"role": "user", "content": (
+                    f"上一稿未通过首聊合同：{error}。请重写完整 JSON，并一次检查完以下各项："
+                    f"opening 只能由 NPC {npc_name} 说，必须逐字含‘我来这里，是因为’；"
+                    f"suggestions 只能由玩家 {player_name} 说，第一条必须以‘嗨，我是{player_name}，{player_mbti}’开头，"
+                    "后两条不得重复姓名或 MBTI；三条各不超过 48 字，不夹英文，不自行键入颜文字。"
+                    "sceneText 未写具体动作和物件，所以不要声称双方刚才脱鞋、找座位、拿放东西或自带某件物品；只承接 opening 中已经说出的想法。"
+                    "三条依次写：玩家身份和参加原因；玩家对 opening 问题的主观回答；从 NPC 已公开背景追问一个具体问题。stageDirection 只写看向、点头或停顿。"
+                )}]
+    return fallback, None
 
 
-async def _story_director_turn(snapshot: dict, candidates: list[dict]) -> dict:
+async def _story_director_turn(
+    snapshot: dict, candidates: list[dict], provider: str | None = None,
+) -> tuple[dict, dict[str, str]]:
     messages = build_story_director_messages(snapshot, candidates)
-    raw = await _llm_text(messages, max_tokens=1100)
+    result = await _llm_text(messages, max_tokens=1100, provider=provider)
+    raw, generator = _coerce_llm_result(result, provider)
     payload = extract_json(raw)
     try:
-        return validate_story_director_output(snapshot, candidates, payload)
+        return validate_story_director_output(snapshot, candidates, payload), generator
     except ValueError as error:
         repair = [*messages, {"role": "user", "content": f"上一份 JSON 未通过事件合同：{error}。请重新输出完整 JSON；只写候选参与者的行动。"}]
-        repaired_raw = await _llm_text(repair, max_tokens=1100)
-        return validate_story_director_output(snapshot, candidates, extract_json(repaired_raw))
+        repaired_result = await _llm_text(repair, max_tokens=1100, provider=generator["provider"])
+        repaired_raw, repaired_generator = _coerce_llm_result(repaired_result, generator["provider"])
+        return validate_story_director_output(snapshot, candidates, extract_json(repaired_raw)), repaired_generator
 
 
 app = FastAPI(title="心动之旅：MBTI恋综模拟器")
+
+
+@app.middleware("http")
+async def _runtime_cache_headers(request: Request, call_next):
+    """Keep repeat visits light while preserving byte-range video responses."""
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/assets/"):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif path.startswith("/media/"):
+        response.headers["Cache-Control"] = "public, max-age=604800, stale-while-revalidate=2592000"
+    elif path == "/" or response.headers.get("content-type", "").startswith("text/html"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 _agent_windows: dict[str, list[float]] = {}
 _agent_global_window: list[float] = []
 
@@ -304,7 +383,7 @@ def health() -> dict:
         "contentVersion": CONTENT_VERSION,
         "characterCardContentVersion": CARD_PACKAGE["contentVersion"],
         "authMode": os.getenv("APP_AUTH_MODE", "sso"),
-        "agentProvider": "deepseek" if os.getenv("DEEPSEEK_API_KEY") else "unconfigured",
+        "llmProviders": provider_status(),
         "databaseConfigured": bool(os.getenv("DATABASE_URL") or _load_props("db.properties").get("db.host")),
         "databaseSchema": _db_schema(),
     }
@@ -329,12 +408,14 @@ def bootstrap(decrypted_userinfo: Optional[str] = Header(None, alias="Decrypted-
     return JSONResponse({
         "user": user, "characters": CHARACTERS, "view": project_view(snapshot) if snapshot else None,
         "rosterPolicy": {"librarySize": len(CHARACTERS), "runCastSize": 8, "selectionOrder": ["mbti", "gender", "character"]},
+        "llmProviders": provider_status(),
     })
 
 
 @app.post("/api/runs", status_code=201)
-async def start_run(body: dict, decrypted_userinfo: Optional[str] = Header(None, alias="Decrypted-Userinfo"), x_client_id: Optional[str] = Header(None, alias="X-Client-Id")) -> JSONResponse:
+async def start_run(body: dict, decrypted_userinfo: Optional[str] = Header(None, alias="Decrypted-Userinfo"), x_client_id: Optional[str] = Header(None, alias="X-Client-Id"), x_llm_provider: Optional[str] = Header(None, alias="X-LLM-Provider")) -> JSONResponse:
     user = _require_user(decrypted_userinfo, x_client_id)
+    selected_provider = _request_provider(x_llm_provider, required=False)
     mbti = str(body.get("mbti") or "INFP").upper()
     valid = {"INTJ", "INTP", "ENTJ", "ENTP", "INFJ", "INFP", "ENFJ", "ENFP", "ISTJ", "ISFJ", "ESTJ", "ESFJ", "ISTP", "ISFP", "ESTP", "ESFP"}
     if mbti not in valid:
@@ -345,7 +426,7 @@ async def start_run(body: dict, decrypted_userinfo: Optional[str] = Header(None,
     if CHARACTER_MAP[perspective_character_id]["mbti"] != mbti:
         raise HTTPException(status_code=400, detail="所选 MBTI 与观察人物不一致，请先选 MBTI 再选对应角色")
     snapshot = create_snapshot(mbti, perspective_character_id)
-    snapshot = await _generate_day1_script(snapshot)
+    snapshot = await _generate_day1_script(snapshot, selected_provider)
     with _get_db_conn() as conn:
         conn.execute(
             "INSERT INTO app_users (id, username, email) VALUES (%s, %s, %s) ON CONFLICT (id) DO UPDATE SET username = EXCLUDED.username, email = EXCLUDED.email, updated_at = NOW()",
@@ -361,8 +442,9 @@ async def start_run(body: dict, decrypted_userinfo: Optional[str] = Header(None,
 
 
 @app.post("/api/runs/{run_id}/choices")
-async def choose(run_id: str, body: dict, decrypted_userinfo: Optional[str] = Header(None, alias="Decrypted-Userinfo"), x_client_id: Optional[str] = Header(None, alias="X-Client-Id")) -> JSONResponse:
+async def choose(run_id: str, body: dict, decrypted_userinfo: Optional[str] = Header(None, alias="Decrypted-Userinfo"), x_client_id: Optional[str] = Header(None, alias="X-Client-Id"), x_llm_provider: Optional[str] = Header(None, alias="X-LLM-Provider")) -> JSONResponse:
     user = _require_user(decrypted_userinfo, x_client_id)
+    selected_provider = _request_provider(x_llm_provider, required=False)
     _enforce_agent_rate_limit(user["userId"])
     try:
         expected_revision = int(body.get("revision"))
@@ -379,29 +461,41 @@ async def choose(run_id: str, body: dict, decrypted_userinfo: Optional[str] = He
         provisional, _ = apply_choice(snapshot, choice_id, character_id, custom_text, suggestion_id)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
-    contextual_payload = await _generate_day1_node_script(provisional, provisional["nodeId"])
+    contextual_generation = await _generate_day1_node_script(
+        provisional, provisional["nodeId"], selected_provider,
+    )
     with _get_db_conn() as conn:
         current = _load_run(conn, run_id, user["userId"], for_update=True)
         if current["revision"] != expected_revision:
             raise HTTPException(status_code=409, detail="状态已经更新，请刷新后重试")
         try:
             next_snapshot, receipt = apply_choice(current, choice_id, character_id, custom_text, suggestion_id)
-            if contextual_payload is not None:
+            if contextual_generation is not None:
+                contextual_payload, generator = contextual_generation
                 next_snapshot = install_day1_node_script(
                     next_snapshot, next_snapshot["nodeId"], contextual_payload,
-                    {"provider": "deepseek", "model": os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")},
+                    generator,
                 )
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error))
         _save_run(conn, run_id, user["userId"], next_snapshot)
         _record_event(conn, run_id, user["userId"], "story.choice", receipt)
         conn.commit()
-    return JSONResponse({**project_view(next_snapshot), "receipt": receipt})
+    return JSONResponse({
+        **project_view(next_snapshot), "receipt": receipt,
+        "llmProvider": generator["provider"] if contextual_generation is not None else None,
+        "generationSource": (
+            f"{generator['provider']}-contextual"
+            if contextual_generation is not None
+            else "engine-fallback"
+        ),
+    })
 
 
 @app.post("/api/runs/{run_id}/agents/{character_id}/messages")
-async def agent_message(run_id: str, character_id: str, body: dict, decrypted_userinfo: Optional[str] = Header(None, alias="Decrypted-Userinfo"), x_client_id: Optional[str] = Header(None, alias="X-Client-Id")) -> JSONResponse:
+async def agent_message(run_id: str, character_id: str, body: dict, decrypted_userinfo: Optional[str] = Header(None, alias="Decrypted-Userinfo"), x_client_id: Optional[str] = Header(None, alias="X-Client-Id"), x_llm_provider: Optional[str] = Header(None, alias="X-LLM-Provider")) -> JSONResponse:
     user = _require_user(decrypted_userinfo, x_client_id)
+    selected_provider = _request_provider(x_llm_provider, required=True)
     character = CHARACTER_MAP.get(character_id)
     if not character:
         raise HTTPException(status_code=404, detail="没有这位嘉宾")
@@ -440,47 +534,49 @@ async def agent_message(run_id: str, character_id: str, body: dict, decrypted_us
         )
         if presence.get(character_id) != conversation_context["locationId"]:
             raise ValueError(f"{character['name']}现在不在{conversation_context['locationName']}")
-        turn = await _agent_turn(character, snapshot, message, conversation_context)
+        turn, generator = await _agent_turn(
+            character, snapshot, message, conversation_context, selected_provider,
+        )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
-        if isinstance(error, httpx.HTTPStatusError):
-            safe_kind = f"http-{error.response.status_code}"
-        elif isinstance(error, httpx.HTTPError):
-            safe_kind = "http-network"
-        else:
-            safe_kind = "json" if isinstance(error, (json.JSONDecodeError, RuntimeError)) else "runtime"
-        raise HTTPException(status_code=503, detail=f"DeepSeek 角色判断暂时没有完成（{safe_kind}），请重试这句话") from error
+        safe_kind = _safe_provider_error_kind(error)
+        raise HTTPException(status_code=503, detail=f"模型角色判断暂时没有完成（{safe_kind}），请重试这句话") from error
     with _get_db_conn() as conn:
         current = _load_run(conn, run_id, user["userId"], for_update=True)
         if current["revision"] != expected_revision:
             raise HTTPException(status_code=409, detail="关系状态已变化，这句话没有被重复写入")
         try:
-            next_snapshot, receipt = commit_agent_turn(current, character_id, message, turn, conversation_context)
+            next_snapshot, receipt = commit_agent_turn(
+                current, character_id, message, turn, conversation_context,
+                provider=generator["provider"],
+            )
         except ValueError as error:
-            raise HTTPException(status_code=502, detail=f"DeepSeek 角色输出未通过人物卡校验：{error}") from error
+            raise HTTPException(status_code=502, detail=f"模型角色输出未通过人物卡校验：{error}") from error
         reply = next_snapshot["echoMemories"][-1]["agentReply"]
         _save_run(conn, run_id, user["userId"], next_snapshot)
         conn.execute(
             "INSERT INTO agent_memories (run_id, owner_id, character_id, memory_id, player_text, agent_reply, intent_id) VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (run_id, user["userId"], character_id, receipt["id"], message, reply, receipt["intentId"]),
         )
-        _record_event(conn, run_id, user["userId"], "agent.memory", receipt)
+        _record_event(conn, run_id, user["userId"], "agent.memory", {**receipt, "generator": generator})
         conn.commit()
     return JSONResponse({
         **project_view(next_snapshot), "reply": reply,
         "suggestions": receipt.get("suggestions", []),
         "suggestedPrompts": receipt.get("suggestedPrompts", []),
         "suggestionsSource": receipt.get("suggestionsSource"),
+        "llmProvider": generator["provider"],
         "receipt": receipt,
     })
 
 
 @app.get("/api/runs/{run_id}/agents/{character_id}/opener")
 @app.get("/api/runs/{run_id}/agents/{character_id}/opening")
-async def agent_opening(run_id: str, character_id: str, revision: Optional[int] = None, decrypted_userinfo: Optional[str] = Header(None, alias="Decrypted-Userinfo"), x_client_id: Optional[str] = Header(None, alias="X-Client-Id")) -> JSONResponse:
+async def agent_opening(run_id: str, character_id: str, revision: Optional[int] = None, decrypted_userinfo: Optional[str] = Header(None, alias="Decrypted-Userinfo"), x_client_id: Optional[str] = Header(None, alias="X-Client-Id"), x_llm_provider: Optional[str] = Header(None, alias="X-LLM-Provider")) -> JSONResponse:
     """Generate first-meeting or reopening copy without committing story state."""
     user = _require_user(decrypted_userinfo, x_client_id)
+    selected_provider = _request_provider(x_llm_provider, required=False)
     _enforce_agent_rate_limit(user["userId"])
     card = CHARACTER_CARD_MAP.get(character_id)
     if not card:
@@ -493,12 +589,14 @@ async def agent_opening(run_id: str, character_id: str, revision: Optional[int] 
         raise HTTPException(status_code=400, detail="当前观察视角就是这位嘉宾，不能打开自己的私聊")
     if character_id not in active_cast_ids(snapshot):
         raise HTTPException(status_code=404, detail="这位嘉宾不在本季八人名单中")
-    opening = await _chat_opening(card, snapshot)
+    opening, generator = await _chat_opening(card, snapshot, selected_provider)
     return JSONResponse({
         **opening,
         "opener": {"stageDirection": opening["stageDirection"], "line": opening["opening"], "dialogue": opening["opening"], "mode": opening["mode"]},
         "suggestedPrompts": opening["suggestions"],
         "suggestions": opening.get("typedSuggestions", []),
+        "llmProvider": generator["provider"] if generator else None,
+        "generationSource": f"{generator['provider']}-opener" if generator else "engine-fallback",
         "characterId": character_id, "revision": snapshot["revision"],
         "guided": (snapshot.get("pendingInteraction") or {}).get("targetCharacterId") == character_id,
     })
@@ -515,9 +613,10 @@ def chat_contexts(run_id: str, decrypted_userinfo: Optional[str] = Header(None, 
 
 @app.post("/api/runs/{run_id}/group-messages")
 @app.post("/api/runs/{run_id}/chats/group/messages")
-async def group_message(run_id: str, body: dict, decrypted_userinfo: Optional[str] = Header(None, alias="Decrypted-Userinfo"), x_client_id: Optional[str] = Header(None, alias="X-Client-Id")) -> JSONResponse:
+async def group_message(run_id: str, body: dict, decrypted_userinfo: Optional[str] = Header(None, alias="Decrypted-Userinfo"), x_client_id: Optional[str] = Header(None, alias="X-Client-Id"), x_llm_provider: Optional[str] = Header(None, alias="X-LLM-Provider")) -> JSONResponse:
     """Bounded location-aware group chat; each NPC keeps an independent memory."""
     user = _require_user(decrypted_userinfo, x_client_id)
+    selected_provider = _request_provider(x_llm_provider, required=True)
     message = str(body.get("message") or "").strip()
     if not message or len(message) > 240:
         raise HTTPException(status_code=400, detail="请输入 1-240 个字")
@@ -564,13 +663,16 @@ async def group_message(run_id: str, body: dict, decrypted_userinfo: Optional[st
             raise ValueError(f"{names}现在不在{context['locationName']}")
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
-    generated: list[tuple[str, dict]] = []
+    generated: list[tuple[str, dict, dict[str, str]]] = []
     for character_id in npc_ids:
         character = CHARACTER_MAP.get(character_id)
         if not character or character_id not in active_cast_ids(snapshot):
             raise HTTPException(status_code=400, detail="群聊参与者不在本季八人名单中")
         try:
-            generated.append((character_id, await _agent_turn(character, snapshot, message, context)))
+            turn, generator = await _agent_turn(
+                character, snapshot, message, context, selected_provider,
+            )
+            generated.append((character_id, turn, generator))
         except Exception as error:
             raise HTTPException(status_code=503, detail=f"{character['name']}的群聊回复暂时没有完成；本轮未写入任何记忆") from error
     with _get_db_conn() as conn:
@@ -579,8 +681,11 @@ async def group_message(run_id: str, body: dict, decrypted_userinfo: Optional[st
             raise HTTPException(status_code=409, detail="群聊状态已经更新；本轮未重复写入")
         replies, receipts = [], []
         try:
-            for character_id, turn in generated:
-                current, receipt = commit_agent_turn(current, character_id, message, turn, context)
+            for character_id, turn, generator in generated:
+                current, receipt = commit_agent_turn(
+                    current, character_id, message, turn, context,
+                    provider=generator["provider"],
+                )
                 memory = current["echoMemories"][-1]
                 replies.append({
                     "characterId": character_id, "characterName": CHARACTER_MAP[character_id]["name"],
@@ -595,15 +700,23 @@ async def group_message(run_id: str, body: dict, decrypted_userinfo: Optional[st
         except ValueError as error:
             raise HTTPException(status_code=502, detail=f"群聊角色输出未通过人物卡校验：{error}") from error
         _save_run(conn, run_id, user["userId"], current)
-        _record_event(conn, run_id, user["userId"], "agent.group-memory", {"context": context, "receipts": receipts})
+        _record_event(conn, run_id, user["userId"], "agent.group-memory", {
+            "context": context,
+            "receipts": receipts,
+            "generators": [generator for _, _, generator in generated],
+        })
         conn.commit()
-    return JSONResponse({**project_view(current), "replies": replies, "context": context, "receipts": receipts})
+    return JSONResponse({
+        **project_view(current), "replies": replies, "context": context,
+        "receipts": receipts, "llmProvider": selected_provider,
+    })
 
 
 @app.post("/api/runs/{run_id}/story-director")
-async def story_director(run_id: str, body: dict, decrypted_userinfo: Optional[str] = Header(None, alias="Decrypted-Userinfo"), x_client_id: Optional[str] = Header(None, alias="X-Client-Id")) -> JSONResponse:
-    """Ask DeepSeek to select one authored, currently eligible main-quest event."""
+async def story_director(run_id: str, body: dict, decrypted_userinfo: Optional[str] = Header(None, alias="Decrypted-Userinfo"), x_client_id: Optional[str] = Header(None, alias="X-Client-Id"), x_llm_provider: Optional[str] = Header(None, alias="X-LLM-Provider")) -> JSONResponse:
+    """Ask the selected model to choose one authored, eligible main-quest event."""
     user = _require_user(decrypted_userinfo, x_client_id)
+    selected_provider = _request_provider(x_llm_provider, required=True)
     _enforce_agent_rate_limit(user["userId"])
     try:
         expected_revision = int(body.get("revision"))
@@ -621,15 +734,10 @@ async def story_director(run_id: str, body: dict, decrypted_userinfo: Optional[s
             raise HTTPException(status_code=409, detail="请先完成或放弃当前主任务")
         raise HTTPException(status_code=409, detail="当前证据还不足以激活新主任务，先完成一次具体交流或剧情选择")
     try:
-        proposal = await _story_director_turn(snapshot, candidates)
+        proposal, generator = await _story_director_turn(snapshot, candidates, selected_provider)
     except Exception as error:
-        if isinstance(error, httpx.HTTPStatusError):
-            safe_kind = f"http-{error.response.status_code}"
-        elif isinstance(error, httpx.HTTPError):
-            safe_kind = "http-network"
-        else:
-            safe_kind = "json" if isinstance(error, (json.JSONDecodeError, RuntimeError)) else "runtime"
-        raise HTTPException(status_code=503, detail=f"DeepSeek 剧情导演暂时没有完成判断（{safe_kind}），请重试") from error
+        safe_kind = _safe_provider_error_kind(error)
+        raise HTTPException(status_code=503, detail=f"模型剧情导演暂时没有完成判断（{safe_kind}），请重试") from error
     with _get_db_conn() as conn:
         current = _load_run(conn, run_id, user["userId"], for_update=True)
         if current["revision"] != expected_revision:
@@ -638,13 +746,24 @@ async def story_director(run_id: str, body: dict, decrypted_userinfo: Optional[s
         try:
             next_snapshot, receipt = commit_story_event(current, current_candidates, proposal)
         except ValueError as error:
-            raise HTTPException(status_code=502, detail=f"DeepSeek 剧情导演输出未通过事件合同：{error}") from error
+            raise HTTPException(status_code=502, detail=f"模型剧情导演输出未通过事件合同：{error}") from error
+        receipt["llmProvider"] = generator["provider"]
         if receipt["kind"] == "story-director-wait":
-            return JSONResponse({**project_view(current), "directorHint": receipt, "receipt": receipt})
+            return JSONResponse({
+                **project_view(current), "directorHint": receipt,
+                "receipt": receipt, "llmProvider": generator["provider"],
+            })
+        if isinstance(next_snapshot.get("storyMission"), dict):
+            next_snapshot["storyMission"]["llmProvider"] = generator["provider"]
+        if next_snapshot.get("storyEventLedger"):
+            next_snapshot["storyEventLedger"][-1]["llmProvider"] = generator["provider"]
         _save_run(conn, run_id, user["userId"], next_snapshot)
-        _record_event(conn, run_id, user["userId"], "story.event.activated", receipt)
+        _record_event(conn, run_id, user["userId"], "story.event.activated", {**receipt, "generator": generator})
         conn.commit()
-    return JSONResponse({**project_view(next_snapshot), "receipt": receipt})
+    return JSONResponse({
+        **project_view(next_snapshot), "receipt": receipt,
+        "llmProvider": generator["provider"],
+    })
 
 
 @app.post("/api/runs/{run_id}/story-missions/{mission_id}/resolve")
@@ -688,7 +807,12 @@ def index():
 def spa_fallback(full_path: str):
     if full_path.startswith("api/"):
         return JSONResponse({"error": "not found"}, status_code=404)
-    real = FRONTEND_DIST / full_path
+    frontend_root = FRONTEND_DIST.resolve()
+    try:
+        real = (frontend_root / full_path).resolve()
+        real.relative_to(frontend_root)
+    except (OSError, ValueError):
+        return JSONResponse({"error": "not found"}, status_code=404)
     if real.is_file():
         return FileResponse(real)
     return FileResponse(INDEX_HTML) if INDEX_HTML.exists() else JSONResponse({"error": "frontend missing"}, status_code=503)

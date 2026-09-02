@@ -11,10 +11,12 @@ from backend.game_content import (
     CHARACTER_MAP,
     CONTENT_VERSION,
     DAY1_MEDIA_CONTRACT,
+    INTRO_BACKGROUND_ANCHORS,
     LEGACY_CAST_IDS,
     MEDIA_ROTATION_ANCHORS,
     NODES,
     RELATIONSHIP_AXES,
+    RUNTIME_ASSET_MAP,
     _public_character,
     active_cast_ids,
     available_chat_contexts,
@@ -102,6 +104,7 @@ class CharacterCardContractTests(unittest.TestCase):
                 genders = [CHARACTER_MAP[character_id]["gender"] for character_id in cast_ids]
                 self.assertEqual(4, genders.count("男性"))
                 self.assertEqual(4, genders.count("女性"))
+                self.assertEqual(7, len({CHARACTER_MAP[character_id]["mbti"] for character_id in cast_ids}))
                 counterpart_ids = [
                     character_id for character_id in cast_ids
                     if character_id != card["id"] and CHARACTER_MAP[character_id]["mbti"] == card["mbti"]
@@ -146,6 +149,39 @@ class CharacterCardContractTests(unittest.TestCase):
         if source_line:
             self.assertNotIn(source_line, serialized)
         self.assertIn(card["researchAnchors"][0]["observablePattern"], serialized)
+
+    def test_runtime_reaction_surfaces_do_not_expose_one_shared_agent_scaffold(self):
+        forbidden_scaffolds = (
+            "先落到", "再从", "只回答当前能确认的一层", "先停止越界动作",
+        )
+        projected_by_id = {
+            card["id"]: runtime_character_card(card)
+            for card in CHARACTER_CARDS
+        }
+        for character_id, projected in projected_by_id.items():
+            with self.subTest(character=character_id):
+                speech_moves = " ".join(
+                    item["speechMove"] for item in projected["reactionMatrix"].values()
+                )
+                self.assertFalse(any(value in speech_moves for value in forbidden_scaffolds))
+                self.assertIn("禁止照抄", projected["dialoguePolicy"]["reactionSurfaceRule"])
+        for mbti in {card["mbti"] for card in CHARACTER_CARDS}:
+            first, second = [card for card in CHARACTER_CARDS if card["mbti"] == mbti]
+            first_moves = projected_by_id[first["id"]]["reactionMatrix"]
+            second_moves = projected_by_id[second["id"]]["reactionMatrix"]
+            self.assertNotEqual(first_moves, second_moves)
+
+    def test_agent_prompt_forbids_copying_reaction_authoring_scaffolds(self):
+        card = CHARACTER_CARD_MAP["lichuan"]
+        snapshot = snapshot_with_character("lichuan")
+        player_card = CHARACTER_CARD_MAP[snapshot["player"]["perspectiveCharacterId"]]
+        prompt = "\n".join(
+            item["content"] for item in build_agent_messages(
+                card, snapshot, "我刚才注意到你一直在帮大家收尾。", player_card,
+            )
+        )
+        self.assertIn("reactionSurfaceRule", prompt)
+        self.assertIn("禁止复述“先落到……再从……”", prompt)
 
     def test_all_runtime_prompts_strip_authoring_provenance_but_keep_behavior_transfer(self):
         forbidden_field_names = (
@@ -304,11 +340,63 @@ class CharacterCardContractTests(unittest.TestCase):
             media["identityTimeline"],
         )
 
-    def test_all_approved_r6_portraits_project_as_dynamic_role_previews(self):
+    def test_media_covered_and_planned_portraits_are_projected_honestly(self):
+        ready_ids = []
+        planned_ids = []
         for character in CHARACTER_MAP.values():
-            self.assertEqual("ready", character["mediaStatus"])
-            self.assertEqual("dynamic-portrait", character["mediaFallbackKind"])
-            self.assertEqual(f"/media/video/CHAR-{character['id']}-portrait.mp4", character["video"])
+            if character["mediaStatus"] == "ready":
+                ready_ids.append(character["id"])
+                self.assertEqual("ready", character["mediaStatus"])
+                self.assertEqual("dynamic-portrait", character["mediaFallbackKind"])
+                self.assertEqual(f"/media/video/CHAR-{character['id']}-portrait.mp4", character["video"])
+            else:
+                planned_ids.append(character["id"])
+                self.assertEqual("planned", character["mediaStatus"])
+                self.assertEqual("", character["video"])
+        self.assertEqual(32, len(ready_ids))
+        self.assertEqual(0, len(planned_ids))
+        self.assertEqual(set(), set(planned_ids))
+        self.assertEqual(set(CHARACTER_CARD_MAP) - set(ready_ids), set(planned_ids))
+
+    def test_reviewed_single_perspective_kitchen_insert_is_strict_and_pair_still_wins(self):
+        single_id = "D1-A6-first-dinner-team--p-luoxing"
+        pair_id = "D1-A6-first-dinner-team--pair-luoxing-luozheng"
+        single = {
+            "path": f"/media/video/{single_id}.mp4", "status": "approved-runtime",
+            "identityCast": ["luoxing"], "identityScope": "single",
+            "leadCharacterId": "luoxing", "singlePerspectiveSafe": True,
+        }
+        media = resolve_identity_safe_media(
+            "D1-A6-first-dinner-team", "luoxing", ["luozheng"],
+            routing_mode="unordered-pair", current_cast_ids=["luoxing", "luozheng"],
+            asset_map={single_id: single},
+        )
+        self.assertEqual(single_id, media["assetId"])
+        self.assertEqual(["luoxing"], media["identityCast"])
+        self.assertEqual(["luoxing", "luozheng"], media["requiredIdentityCast"])
+        self.assertEqual("single-perspective-reaction", media["routingMode"])
+        self.assertEqual("reviewed-single-perspective-offscreen-partner", media["selectionReason"])
+
+        pair = {
+            "path": f"/media/video/{pair_id}.mp4", "status": "approved-runtime",
+            "identityCast": ["luoxing", "luozheng"],
+        }
+        exact = resolve_identity_safe_media(
+            "D1-A6-first-dinner-team", "luoxing", ["luozheng"],
+            routing_mode="unordered-pair", current_cast_ids=["luoxing", "luozheng"],
+            asset_map={single_id: single, pair_id: pair},
+        )
+        self.assertEqual(pair_id, exact["assetId"])
+        self.assertEqual("unordered-pair", exact["routingMode"])
+
+        unsafe = dict(single)
+        unsafe.pop("singlePerspectiveSafe")
+        fallback = resolve_identity_safe_media(
+            "D1-A6-first-dinner-team", "luoxing", ["luozheng"],
+            routing_mode="unordered-pair", current_cast_ids=["luoxing", "luozheng"],
+            asset_map={single_id: unsafe},
+        )
+        self.assertEqual("CHAR-luoxing-portrait", fallback["assetId"])
 
     def test_role_preview_never_projects_unapproved_or_wrong_identity_portrait(self):
         card = CHARACTER_CARD_MAP["peiran"]
@@ -357,12 +445,18 @@ class CharacterCardContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "不在本季八人名单"):
             commit_agent_turn(snapshot, outsider_id, "你好。", valid_turn(CHARACTER_CARD_MAP[outsider_id]))
 
-    def test_all_sixteen_cards_have_interop_contract(self):
-        self.assertEqual(16, len(CHARACTER_CARDS))
-        for card in CHARACTER_CARDS[:8]:
+    def test_all_thirty_two_cards_have_interop_contract(self):
+        self.assertEqual(32, len(CHARACTER_CARDS))
+        self.assertEqual(16, len({card["mbti"] for card in CHARACTER_CARDS}))
+        for mbti in {card["mbti"] for card in CHARACTER_CARDS}:
+            self.assertEqual(
+                {"男性", "女性"},
+                {card["identity"]["gender"] for card in CHARACTER_CARDS if card["mbti"] == mbti},
+            )
+        for card in CHARACTER_CARDS:
             self.assertEqual(set(RELATIONSHIP_AXES), set(card["agentPolicy"]["deltaBounds"]))
             self.assertEqual({"analysts", "diplomats", "sentinels", "explorers"}, set(card["interactionStrategies"]) & {"analysts", "diplomats", "sentinels", "explorers"})
-            self.assertGreaterEqual(len(card["fewShots"]), 2)
+            self.assertGreaterEqual(len(card["fewShots"]), 4)
             self.assertIn(card["eventPolicy"]["eventId"], card["agentPolicy"]["allowedEventIds"])
             self.assertIn(card["sourceProfile"]["alignment"], {"exact", "name-adapted", "runtime-original", "type-adapted", "name-and-type-adapted"})
             self.assertTrue(card["cognitiveStyle"]["decisionRule"])
@@ -370,16 +464,25 @@ class CharacterCardContractTests(unittest.TestCase):
             self.assertEqual({"supportive", "probing", "challenging", "boundaryViolation"}, set(card["reactionMatrix"]))
             self.assertIn("新事实", card["dialoguePolicy"]["mustAdvanceBy"])
 
+        distinctive_gates = [
+            card["dialoguePolicy"]["distinctiveVoiceGate"] for card in CHARACTER_CARDS
+        ]
+        self.assertEqual(32, len(set(distinctive_gates)))
+        for mbti in {card["mbti"] for card in CHARACTER_CARDS}:
+            first, second = [card for card in CHARACTER_CARDS if card["mbti"] == mbti]
+            self.assertNotEqual(first["cognitiveStyle"]["inputFilter"], second["cognitiveStyle"]["inputFilter"])
+            self.assertNotEqual(first["cognitiveStyle"]["repairMove"], second["cognitiveStyle"]["repairMove"])
+            self.assertNotEqual(first["interactionStrategies"], second["interactionStrategies"])
+            self.assertNotEqual(first["memoryPolicy"]["remember"], second["memoryPolicy"]["remember"])
+            self.assertNotEqual(first["reactionMatrix"], second["reactionMatrix"])
+
     def test_public_identity_cards_use_confirmed_occupation_or_explicit_holdback(self):
-        expected = {
-            "shenmo": "投行VP", "linyu": "建筑工程师", "chengye": "极限运动品牌创始人",
-            "guyan": "游戏策划/外包", "jiangwan": "心理咨询师", "jiangmi": "职业待公开",
-            "sunnian": "插画师", "chensu": "职业待公开",
-            "luyao": "智能硬件产品负责人", "yecheng": "古籍修复师",
-            "tangli": "户外纪录片现场制片人", "wenxu": "城市气候数据研究员",
-            "hechuan": "纪录片剪辑师", "peiran": "儿童博物馆体验策展人",
-            "lichuan": "精品酒店餐饮运营经理", "qiaolan": "舞台机械工程师",
-        }
+        expected = {}
+        for card in CHARACTER_CARDS:
+            occupation = card.get("sourceProfile", {}).get("facts", {}).get("occupation")
+            expected[card["id"]] = occupation if isinstance(occupation, str) and not any(
+                marker in occupation for marker in ("待剧情", "待正式确认", "运行时职业待")
+            ) else "职业待公开"
         self.assertEqual(expected, {character_id: character["occupation"] for character_id, character in CHARACTER_MAP.items()})
         self.assertIsNone(CHARACTER_MAP["jiangmi"]["age"])
         self.assertEqual(29, CHARACTER_MAP["shenmo"]["age"])
@@ -605,8 +708,21 @@ class CharacterCardContractTests(unittest.TestCase):
         valid_node = {"node": build_fallback_script_flavor("jiangmi", active_cast_ids(snapshot))["nodes"]["team-up"]}
         normalized = validate_day1_node_script(snapshot, "team-up", valid_node)
         self.assertEqual([item["id"] for item in NODES["team-up"]["choices"]], [item["id"] for item in normalized["choices"]])
+        without_speaker = {"node": dict(valid_node["node"])}
+        without_speaker["node"].pop("speakerId", None)
+        self.assertEqual("narrator", validate_day1_node_script(snapshot, "team-up", without_speaker)["speakerId"])
         installed = install_day1_node_script(snapshot, "team-up", valid_node, {"provider": "deepseek", "model": "test"})
         self.assertEqual("deepseek-contextual", installed["scriptFlavor"]["contextualNodes"]["team-up"]["source"])
+
+        dots_installed = install_day1_node_script(
+            snapshot, "team-up", valid_node,
+            {"provider": "dots", "model": "dots3-note-prev"},
+        )
+        evidence = dots_installed["scriptFlavor"]["contextualNodes"]["team-up"]
+        self.assertEqual("dots-contextual", evidence["source"])
+        self.assertEqual("dots3-note-prev", evidence["generator"]["model"])
+        public_evidence = project_view(dots_installed)["snapshot"]["scriptFlavor"]["contextualNodes"]["team-up"]
+        self.assertEqual({"provider": "dots"}, public_evidence["generator"])
 
     def test_contextual_node_prompt_contains_protagonist_memory_and_not_media_contract(self):
         snapshot = create_snapshot("ENFP", "jiangmi")
@@ -616,6 +732,10 @@ class CharacterCardContractTests(unittest.TestCase):
         prompt = build_day1_node_messages(snapshot, "team-up")[1]["content"]
         self.assertIn('"primary": "姜米"', prompt)
         self.assertIn("沈墨记得姜米愿意先说清分工", prompt)
+        self.assertIn('"forbiddenUndeclaredPropTerms"', prompt)
+        self.assertIn("三分钟破冰和首次单独寒暄之后", prompt)
+        self.assertIn('"safeActionFallback"', prompt)
+        self.assertIn("绝不能因此凭空出现录音笔", build_day1_node_messages(snapshot, "team-up")[0]["content"])
         self.assertNotIn("/media/video/", prompt)
 
     def test_perspective_character_cannot_chat_or_receive_own_letter(self):
@@ -654,7 +774,7 @@ class CharacterCardContractTests(unittest.TestCase):
         snapshot = create_snapshot("ESFJ", "jiangmi")
         fallback = build_fallback_script_flavor("jiangmi", active_cast_ids(snapshot))
         validated = validate_day1_script(snapshot, fallback)
-        self.assertEqual("deepseek", validated["source"])
+        self.assertEqual("llm", validated["source"])
         self.assertEqual(
             [choice["id"] for choice in NODES["icebreaker-choice"]["choices"]],
             [choice["id"] for choice in validated["nodes"]["icebreaker-choice"]["choices"]],
@@ -756,15 +876,6 @@ class CharacterCardContractTests(unittest.TestCase):
                 self.assertNotIn("你猜", choice["label"])
 
     def test_all_live_fallback_introductions_are_spoken_character_lines(self):
-        background_anchors = {
-            "shenmo": ("投行",), "linyu": ("建筑",), "chengye": ("极限运动",),
-            "guyan": ("游戏",), "jiangwan": ("心理咨询",), "jiangmi": ("声音", "录音", "故事"),
-            "sunnian": ("插画",), "chensu": ("相机", "修"),
-            "luyao": ("智能硬件", "产品"), "yecheng": ("古籍", "修复"),
-            "tangli": ("户外纪录片", "现场制片"), "wenxu": ("城市气候", "数据"),
-            "hechuan": ("纪录片", "剪辑"), "peiran": ("儿童博物馆", "体验策展"),
-            "lichuan": ("精品酒店", "餐饮运营"), "qiaolan": ("舞台机械", "工程"),
-        }
         strategy_summaries = ("认真介绍姓名", "介绍完自己", "承认有点紧张", "选择一种方式")
         for card in CHARACTER_CARDS:
             snapshot = create_snapshot(card["mbti"], card["id"])
@@ -775,12 +886,12 @@ class CharacterCardContractTests(unittest.TestCase):
                 label = choice["label"]
                 self.assertIn(card["names"]["primary"], label)
                 self.assertIn(card["mbti"], label)
-                self.assertTrue(any(anchor in label for anchor in background_anchors[card["id"]]))
+                self.assertTrue(any(anchor in label for anchor in INTRO_BACKGROUND_ANCHORS[card["id"]]))
                 self.assertTrue(any(marker in label for marker in ("来这里", "来参加", "这次来", "这七天", "我来参加")))
                 self.assertFalse(any(summary in label for summary in strategy_summaries))
 
     def test_all_runtime_fallback_nodes_pass_contextual_surface_contract(self):
-        for card in CHARACTER_CARDS[:8]:
+        for card in CHARACTER_CARDS:
             snapshot = create_snapshot(card["mbti"], card["id"])
             installed = install_day1_script(snapshot, None)
             self.assertEqual("fallback", installed["scriptFlavor"]["source"])
@@ -934,6 +1045,132 @@ class CharacterCardContractTests(unittest.TestCase):
         self.assertIn('"playerVoiceForSuggestions"', prompt)
         self.assertIn('"type": "mainline"', prompt)
 
+    def test_female_player_prompt_uses_card_specific_natural_expression_contract(self):
+        snapshot = create_snapshot("ENFP", "jiangmi")
+        snapshot["nodeId"] = "guided-chat"
+        card = CHARACTER_CARD_MAP["shenmo"]
+        messages = build_agent_messages(
+            card, snapshot, "你好，我刚才也在记大家的名字。", CHARACTER_CARD_MAP["jiangmi"],
+        )
+        prompt = messages[1]["content"]
+        system = messages[0]["content"]
+        self.assertIn('"gender": "女性"', prompt)
+        self.assertIn('"naturalExpressionContract"', prompt)
+        self.assertIn('"emotionalExpressiveness": 88', prompt)
+        self.assertIn('"maximumAcrossThreeSuggestions": 1', prompt)
+        self.assertIn("不等于撒娇、害羞", system)
+
+        opening = json.loads(build_chat_opening_messages(
+            card, snapshot, CHARACTER_CARD_MAP["jiangmi"],
+        )[1]["content"])["context"]["playerPerspective"]
+        self.assertEqual("女性", opening["gender"])
+        self.assertTrue(opening["naturalExpressionContract"]["kaomoji"]["mayUseNow"])
+
+    def test_female_player_allows_one_complete_kaomoji_suggestion(self):
+        snapshot = create_snapshot("ENFP", "jiangmi")
+        snapshot["nodeId"] = "guided-chat"
+        card = CHARACTER_CARD_MAP["shenmo"]
+        turn = valid_turn(card)
+        turn["suggestions"] = [
+            {"type": "followup", "text": "你刚才说想从小事开始，那我们先从哪一件开始？ (◕ܫ◕)"},
+            {"type": "mainline", "text": "沈墨，要不要一起去厨房准备晚餐？我们先商量分工。"},
+            {"type": "deeper", "text": "如果不用马上给答案，你最想先让我认识哪一面？"},
+        ]
+        validated = validate_agent_turn(card, turn, snapshot, "你好，我也想从一件小事开始。")
+        self.assertIn("(◕ܫ◕)", validated["suggestions"][0]["text"])
+
+        damaged = valid_turn(card)
+        damaged["suggestions"] = [
+            {"type": "followup", "text": "你刚才说想从小事开始，那我们先从哪一件开始？ (◕ Shay ◕)"},
+            {"type": "mainline", "text": "沈墨，要不要一起去厨房准备晚餐？我们先商量分工。"},
+            {"type": "deeper", "text": "如果不用马上给答案，你最想先让我认识哪一面？"},
+        ]
+        cleaned = validate_agent_turn(card, damaged, snapshot, "你好，我也想从一件小事开始。")
+        self.assertNotIn("Shay", cleaned["suggestions"][0]["text"])
+
+    def test_suggestion_kaomoji_respects_count_gender_serious_context_and_cooldown(self):
+        female_snapshot = create_snapshot("ENFP", "jiangmi")
+        female_snapshot["nodeId"] = "guided-chat"
+        target = CHARACTER_CARD_MAP["shenmo"]
+        two_faces = valid_turn(target)
+        two_faces["suggestions"] = [
+            {"type": "followup", "text": "你刚才说想从小事开始，那先挑一件？ (◕ܫ◕)"},
+            {"type": "mainline", "text": "沈墨，一起去厨房准备晚餐吧，我们先分工 ლ(╹◡╹ლ)"},
+            {"type": "deeper", "text": "你最希望别人记住哪一件小事？"},
+        ]
+        with self.assertRaisesRegex(ValueError, "颜文字"):
+            validate_agent_turn(target, two_faces, female_snapshot, "我也想从小事开始。")
+
+        serious = valid_turn(target)
+        serious["suggestions"] = [
+            {"type": "followup", "text": "你刚才听见我说不舒服了吗？ (◕ܫ◕)"},
+            {"type": "mainline", "text": "我们先不去厨房，等边界说清楚再决定。"},
+            {"type": "deeper", "text": "你现在能先听我把拒绝说完吗？"},
+        ]
+        with self.assertRaisesRegex(ValueError, "颜文字"):
+            validate_agent_turn(target, serious, female_snapshot, "别再问了，我有点不舒服。")
+
+        male_snapshot = create_snapshot("INTJ", "shenmo")
+        male_snapshot["nodeId"] = "guided-chat"
+        female_target = CHARACTER_CARD_MAP["jiangmi"]
+        male_turn = valid_turn(female_target)
+        male_turn["suggestions"] = [
+            {"type": "followup", "text": "你刚才说喜欢海风，最喜欢哪个时刻？ (◕ܫ◕)"},
+            {"type": "mainline", "text": "姜米，要不要一起去厨房准备晚餐？我们先分工。"},
+            {"type": "deeper", "text": "你平时会怎样记住一次刚认识的相遇？"},
+        ]
+        with self.assertRaisesRegex(ValueError, "颜文字"):
+            validate_agent_turn(female_target, male_turn, male_snapshot, "我刚才也听见海风了。")
+
+        female_snapshot["echoMemories"].append({
+            "characterId": "shenmo", "playerText": "好，那就这么说定啦 (◕ܫ◕)",
+            "agentReply": "我记住了。", "summary": "约好晚餐分工",
+        })
+        fallback_turn = valid_turn(target)
+        fallback_turn.pop("suggestions", None)
+        fallback = validate_agent_turn(target, fallback_turn, female_snapshot, "你刚才回答得很认真。")
+        self.assertFalse(any("(◕ܫ◕)" in item["text"] for item in fallback["suggestions"]))
+
+    def test_fallback_opening_is_natural_without_flattening_all_female_voices(self):
+        playful_snapshot = create_snapshot("ENFP", "jiangmi")
+        playful = fallback_chat_opening(
+            CHARACTER_CARD_MAP["shenmo"], playful_snapshot, CHARACTER_CARD_MAP["jiangmi"],
+        )
+        self.assertEqual(1, sum("(◕ܫ◕)" in item for item in playful["suggestions"]))
+        validate_chat_opening(
+            CHARACTER_CARD_MAP["shenmo"], playful_snapshot, playful, CHARACTER_CARD_MAP["jiangmi"],
+        )
+
+        restrained_snapshot = _create_snapshot("ISTP", "qiaolan")
+        target_id = next(
+            character_id for character_id in active_cast_ids(restrained_snapshot)
+            if character_id != "qiaolan"
+        )
+        restrained = fallback_chat_opening(
+            CHARACTER_CARD_MAP[target_id], restrained_snapshot, CHARACTER_CARD_MAP["qiaolan"],
+        )
+        self.assertFalse(any("(◕ܫ◕)" in item or "∀" in item or "╹◡╹" in item for item in restrained["suggestions"]))
+
+    def test_opening_repairs_mutated_kaomoji_and_long_chip_before_card_decoration(self):
+        snapshot = create_snapshot("ENFP", "jiangmi")
+        target = CHARACTER_CARD_MAP["shenmo"]
+        player = CHARACTER_CARD_MAP["jiangmi"]
+        payload = fallback_chat_opening(target, snapshot, player)
+        payload["suggestions"] = [
+            "嗨，我是姜米，ENFP。刚才人多，现在终于能补一句正式的你好了 (◕ Shelley ◕)",
+            "沈墨，你刚才介绍自己时提到想慢一点认识人，我想知道你最希望别人先记住哪一件很小、但对你很重要的事？",
+            "先不急着聊结果，你现在最想让一个刚认识的人了解什么？",
+        ]
+        validated = validate_chat_opening(target, snapshot, payload, player)
+        self.assertNotIn("Shelley", "".join(validated["suggestions"]))
+        self.assertEqual(1, sum("(◕ܫ◕)" in item for item in validated["suggestions"]))
+        self.assertTrue(all(len(item) <= 60 for item in validated["suggestions"]))
+
+        invented = fallback_chat_opening(target, snapshot, player)
+        invented["suggestions"][1] = "我刚才看到你在玄关系鞋带，是在想事情吗？"
+        with self.assertRaisesRegex(ValueError, "现场没有"):
+            validate_chat_opening(target, snapshot, invented, player)
+
     def test_suggestion_fallback_is_grounded_and_rejects_fake_player_quote(self):
         snapshot = snapshot_with_character("jiangmi")
         snapshot["nodeId"] = "guided-chat"
@@ -964,6 +1201,30 @@ class CharacterCardContractTests(unittest.TestCase):
                 card, fake_quote, snapshot,
                 "我不想听节目里的标准答案。你为什么还留在这里？",
             )
+
+    def test_team_up_suggestion_fallback_matches_the_current_action_goal(self):
+        snapshot = create_snapshot("ENFP", "jiangmi")
+        snapshot["nodeId"] = "team-up"
+        snapshot["echoMemories"].append({
+            "characterId": "chengye", "agentReply": "我叫程野，先好好认识大家。",
+            "summary": "双方已经完成第一次问候",
+        })
+        card = CHARACTER_CARD_MAP["chengye"]
+        fallback_payload = valid_turn(card)
+        fallback_payload["dialogue"] = "说实话，我现在最想去露台吹会儿风，等人少一点再回来帮大家收尾。"
+        fallback_payload.pop("suggestions", None)
+        validated = validate_agent_turn(
+            card, fallback_payload, snapshot,
+            "如果不用照顾现场气氛，你今晚最想做什么？",
+        )
+        self.assertIn("厨房", validated["suggestions"][1]["text"])
+        self.assertIn("备菜", validated["suggestions"][1]["text"])
+        revalidated = validate_agent_turn(
+            card, validated, snapshot,
+            "如果不用照顾现场气氛，你今晚最想做什么？",
+            provider="dots",
+        )
+        self.assertEqual("engine-fallback", revalidated["suggestionsSource"])
 
     def test_agent_mainline_suggestion_must_return_to_current_goal(self):
         snapshot = create_snapshot("ENFP", "jiangmi")
@@ -1021,6 +1282,7 @@ class CharacterCardContractTests(unittest.TestCase):
             CHARACTER_CARD_MAP["jiangmi"], runtime_context,
         )[0]["content"])
         self.assertIn('"humanSpeechContract"', prompt)
+        self.assertIn("不能把观察写成排查灯架", prompt)
         self.assertIn('"romanticIntelligenceContract"', prompt)
         system = build_agent_messages(
             CHARACTER_CARD_MAP["linyu"], snapshot, "我今天有点紧张。",
@@ -1028,6 +1290,21 @@ class CharacterCardContractTests(unittest.TestCase):
         )[0]["content"]
         self.assertIn("真人不会平均回应", system)
         self.assertIn("不得把女性的主动写成等待男性评判", system)
+
+    def test_agent_output_contract_requires_scalar_enum_values(self):
+        snapshot = create_snapshot("ENFP", "jiangmi")
+        messages = build_agent_messages(
+            CHARACTER_CARD_MAP["chengye"], snapshot, "今晚你最想做什么？",
+            CHARACTER_CARD_MAP["jiangmi"],
+        )
+        prompt = messages[1]["content"]
+        system = messages[0]["content"]
+        self.assertIn('"attitude": "必须是单个字符串', prompt)
+        self.assertIn('"intentId": "必须是单个字符串', prompt)
+        self.assertIn('"kind": "必须是单个字符串', prompt)
+        self.assertIn('"proposedEventId": "必须是 null 或单个字符串', prompt)
+        self.assertIn("attitude、intentId、memory.kind", system)
+        self.assertIn("绝不能输出数组", system)
 
     def test_agent_validator_rejects_ai_summary_and_fake_disfluency(self):
         snapshot = create_snapshot("ENFP", "jiangmi")
@@ -1040,6 +1317,24 @@ class CharacterCardContractTests(unittest.TestCase):
         fake_human["dialogue"] = "我……那个，就是……怎么说呢……先这样吧。"
         with self.assertRaisesRegex(ValueError, "机械堆叠"):
             validate_agent_turn(card, fake_human, snapshot, "你怎么突然不说话了？")
+
+    def test_agent_prompt_and_validator_reject_unnecessary_english_in_chinese_dialogue(self):
+        snapshot = create_snapshot("ENFP", "jiangmi")
+        card = CHARACTER_CARD_MAP["linyu"]
+        messages = build_agent_messages(card, snapshot, "你刚才最先注意到什么？", CHARACTER_CARD_MAP["jiangmi"])
+        self.assertIn("不得夹杂英文", messages[1]["content"])
+        mixed_language = valid_turn(card)
+        mixed_language["dialogue"] = "你好，我是林屿，MBTI是ISFJ。我刚才先 noticed 到门边的行李，你呢？"
+        with self.assertRaisesRegex(ValueError, "不必要的英文"):
+            validate_agent_turn(card, mixed_language, snapshot, "你刚才最先注意到什么？")
+
+    def test_agent_validator_rejects_invented_scene_faults(self):
+        snapshot = create_snapshot("ENFP", "jiangmi")
+        card = CHARACTER_CARD_MAP["chensu"]
+        invented_fault = valid_turn(card)
+        invented_fault["dialogue"] = "你好，我是陈叙，MBTI是ISTP，我平时喜欢修旧相机。这次来是想认真认识一个人。门框上的灯架晃得厉害，我得先固定。"
+        with self.assertRaisesRegex(ValueError, "编造了当前场景没有的设施故障"):
+            validate_agent_turn(card, invented_fault, snapshot, "你进门先注意到什么？")
 
     def test_chat_opening_prompt_uses_same_human_speech_and_romance_contract(self):
         snapshot = create_snapshot("ENFP", "jiangmi")

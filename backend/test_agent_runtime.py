@@ -5,7 +5,13 @@ import os
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from backend.app import _agent_turn, _chat_opening, _generate_day1_node_script, _generate_day1_script
+from backend.app import (
+    _agent_turn,
+    _chat_opening,
+    _generate_day1_node_script,
+    _generate_day1_script,
+    _story_director_turn,
+)
 from backend.agent_prompt import fallback_chat_opening
 from backend.game_content import (
     CHARACTER_CARD_MAP,
@@ -49,7 +55,7 @@ class AgentRuntimeRewriteTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual("fallback", result["scriptFlavor"]["source"])
         fake_llm.assert_not_awaited()
 
-    async def test_deepseek_runtime_paths_receive_retrieved_character_few_shots(self) -> None:
+    async def test_dots_runtime_paths_receive_character_few_shots_and_provenance(self) -> None:
         snapshot = create_snapshot("ENFP", "jiangmi")
         target_id = next(character_id for character_id in active_cast_ids(snapshot) if character_id != "jiangmi")
         card = CHARACTER_CARD_MAP[target_id]
@@ -60,9 +66,14 @@ class AgentRuntimeRewriteTests(unittest.IsolatedAsyncioTestCase):
         }]
         turn = _runtime_turn(card, "刚才那只箱子确实难推。晚餐分工别客气，你挑一件，我补另一件。", "晚餐具体分工")
         turn_llm = AsyncMock(return_value=json.dumps(turn, ensure_ascii=False))
-        with patch("backend.app._llm_text", turn_llm):
-            await _agent_turn(CHARACTER_MAP[target_id], snapshot, "刚才谢谢你扶门。")
+        dots_env = {"DOTS_API_KEY": "configured-for-test", "DOTS_MODEL": "dots-test-model"}
+        with patch.dict(os.environ, dots_env, clear=False), patch("backend.app._llm_text", turn_llm):
+            _, turn_generator = await _agent_turn(
+                CHARACTER_MAP[target_id], snapshot, "刚才谢谢你扶门。", provider="dots",
+            )
         turn_messages = turn_llm.await_args.args[0]
+        self.assertEqual("dots", turn_llm.await_args.kwargs["provider"])
+        self.assertEqual({"provider": "dots", "model": "dots-test-model"}, turn_generator)
         self.assertIn('"retrievedFewShotStructures"', turn_messages[1]["content"])
         self.assertIn(f'"characterId": "{target_id}"', turn_messages[1]["content"])
         self.assertIn('"retrievedPlayerStrategyFewShotStructures"', turn_messages[1]["content"])
@@ -71,11 +82,13 @@ class AgentRuntimeRewriteTests(unittest.IsolatedAsyncioTestCase):
         opening_payload = fallback_chat_opening(card, cold_snapshot)
         opening_llm = AsyncMock(return_value=json.dumps(opening_payload, ensure_ascii=False))
         with (
-            patch.dict(os.environ, {"DEEPSEEK_API_KEY": "configured-for-test"}),
+            patch.dict(os.environ, dots_env, clear=False),
             patch("backend.app._llm_text", opening_llm),
         ):
-            await _chat_opening(card, cold_snapshot)
+            _, opening_generator = await _chat_opening(card, cold_snapshot, "dots")
         opening_messages = opening_llm.await_args.args[0]
+        self.assertEqual("dots", opening_llm.await_args.kwargs["provider"])
+        self.assertEqual({"provider": "dots", "model": "dots-test-model"}, opening_generator)
         opening_context = json.loads(opening_messages[1]["content"])["context"]
         self.assertEqual(target_id, opening_context["retrievedFewShotStructures"]["characterId"])
         self.assertEqual("jiangmi", opening_context["retrievedPlayerStrategyFewShotStructures"]["characterId"])
@@ -85,12 +98,15 @@ class AgentRuntimeRewriteTests(unittest.IsolatedAsyncioTestCase):
         fallback_node = build_fallback_script_flavor("qiaolan", active_cast_ids(node_snapshot))["nodes"][node_id]
         node_llm = AsyncMock(return_value=json.dumps({"node": fallback_node}, ensure_ascii=False))
         with (
-            patch.dict(os.environ, {"DEEPSEEK_API_KEY": "configured-for-test"}),
+            patch.dict(os.environ, dots_env, clear=False),
             patch("backend.app._llm_text", node_llm),
         ):
-            result = await _generate_day1_node_script(node_snapshot, node_id)
+            result = await _generate_day1_node_script(node_snapshot, node_id, "dots")
         self.assertIsNotNone(result)
+        _, node_generator = result
+        self.assertEqual({"provider": "dots", "model": "dots-test-model"}, node_generator)
         node_messages = node_llm.await_args.args[0]
+        self.assertEqual("dots", node_llm.await_args.kwargs["provider"])
         node_context = json.loads(node_messages[1]["content"])["context"]
         self.assertEqual("qiaolan", node_context["retrievedFewShotStructures"]["characterId"])
 
@@ -119,10 +135,26 @@ class AgentRuntimeRewriteTests(unittest.IsolatedAsyncioTestCase):
             json.dumps(first, ensure_ascii=False), json.dumps(second, ensure_ascii=False),
         ])
         with patch("backend.app._llm_text", fake_llm):
-            result = await _agent_turn(CHARACTER_MAP[target_id], snapshot, "其实我现在还是有点紧张。")
+            result, generator = await _agent_turn(CHARACTER_MAP[target_id], snapshot, "其实我现在还是有点紧张。")
 
         self.assertEqual(second["dialogue"], result["dialogue"])
+        self.assertEqual("deepseek", generator["provider"])
         self.assertEqual(2, fake_llm.await_count)
+
+    async def test_story_director_freezes_dots_provider_and_reports_provenance(self) -> None:
+        fake_llm = AsyncMock(return_value="{}")
+        validated = {"decision": "wait", "proposedEventId": None}
+        with (
+            patch.dict(os.environ, {"DOTS_API_KEY": "configured", "DOTS_MODEL": "dots-director-test"}, clear=False),
+            patch("backend.app.build_story_director_messages", return_value=[{"role": "user", "content": "test"}]),
+            patch("backend.app.validate_story_director_output", return_value=validated),
+            patch("backend.app._llm_text", fake_llm),
+        ):
+            proposal, generator = await _story_director_turn({}, [], "dots")
+
+        self.assertEqual(validated, proposal)
+        self.assertEqual({"provider": "dots", "model": "dots-director-test"}, generator)
+        self.assertEqual("dots", fake_llm.await_args.kwargs["provider"])
 
 
 if __name__ == "__main__":

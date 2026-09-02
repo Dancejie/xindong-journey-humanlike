@@ -1,13 +1,19 @@
 {
   "schemaVersion": 1,
-  "contentVersion": "3.2.0-humanlike-fewshots",
+  "contentVersion": "3.4.0-distinct-character-cores",
   "notes": [
     "人物事实、运行时改编、MBTI偏好和文学研究分层保存；研究层不得覆盖人物事实。",
     "16张人物卡各含4条项目原创结构化few-shot，覆盖初见、支持、挑战、边界/修复。",
     "MBTI官方页面仅作非诊断偏好镜头；不得把类型当命运、事实或性别刻板印象。",
     "公共领域文学只迁移可观察行为顺序；不复制台词、人物、情节或作者文风。",
     "Project Gutenberg仅确认美国状态；本项目不捆绑其文本，公开分发仍需按目标法域与翻译版本复核。",
-    "用户举例提到ENTP，但当前运行时阵容为ESTP；本轮保持现有8种MBTI不改型。"
+    "用户举例提到ENTP，但当前运行时阵容为ESTP；本轮保持现有8种MBTI不改型。",
+    "R9补齐ENTJ、ENTP、INFP、ENFJ、ISTJ、ESTJ、ISFP、ESFP，每型各一男一女。",
+    "官方MBTI来源只支持抽象偏好镜头；16位人物的职业、经历、利益、边界、事件和台词均为本项目原创。",
+    "所有few-shot只保存可观察decisionTrace，不保存或请求模型私密chain-of-thought。",
+    "同型男女角色不互为换皮版本；性别不决定热情、理性、照料、领导或颜文字风格。",
+    "R9 中 6 位人物具有欧洲大陆生活背景，城市与职业来源仅用于现实语境，不用国籍推导性格，也不复制任何名人或影视人物。",
+    "删除姓名、性别、MBTI与国籍后，每位人物仍须能由第一注意对象、压力失真、修复动作、职业道具和关系边界被识别。"
   ],
   "sources": [
     {
@@ -31,12 +37,12 @@
     {
       "id": "source.mbti-type-dynamics",
       "label": "Myers & Briggs Foundation: Type Dynamics Processes",
-      "locator": "Dominant processes and overuse: Ni, Ne, Si, Fe",
+      "locator": "Dominant and auxiliary processes, best-use and overuse descriptions for all 16 types",
       "evidenceLevel": "verified",
       "rightsUse": "research-reference",
-      "note": "用于把类型偏好转写为输入过滤、决策和压力失真；不作为诊断。",
+      "note": "用于把偏好转写为可观察的输入过滤、决策、压力失真和修复；不推断私密思维。",
       "url": "https://www.myersbriggs.org/unique-features-of-myers-briggs/type-dynamics-processes/",
-      "accessedAt": "2026-08-26",
+      "accessedAt": "2026-09-01",
       "rightsStatus": "research-only",
       "transferRule": "Use as a non-diagnostic lens for attention and stress distortion; runtime receives only project-authored rules.",
       "prohibitedTransfer": [
@@ -67,12 +73,12 @@
     {
       "id": "source.mbti-foundation-types",
       "label": "Myers & Briggs Foundation: The 16 MBTI Personality Types",
-      "locator": "All 16 type descriptions; project roster uses INTJ, INTP, ESTP, ISTP, INFJ, ENFP, ISFJ and ESFJ",
+      "locator": "All 16 type descriptions; R9 authoring uses all 16 only as non-diagnostic preference lenses",
       "evidenceLevel": "verified",
       "rightsUse": "research-reference",
-      "note": "用于八种类型的偏好层，不把类型描述直接当作人物事实。",
+      "note": "用于16种类型的抽象偏好层；不把类型描述直接当作人物事实、诊断或唯一人格。",
       "url": "https://www.myersbriggs.org/my-mbti-personality-type/the-16-mbti-personality-types/home.htm",
-      "accessedAt": "2026-08-26",
+      "accessedAt": "2026-09-01",
       "rightsStatus": "research-only",
       "transferRule": "Abstract preference tendencies only; never diagnose, quote at runtime, or override the character's authored facts.",
       "prohibitedTransfer": [
@@ -416,9 +422,161 @@
         "rescue fantasy",
         "character identities"
       ]
+    },
+    {
+      "id": "source.r9-character-authoring",
+      "label": "《心动之旅》R9全MBTI双性别原创人物扩展源",
+      "locator": "content/character_cards.r9/manifest.json and the four declared cardFiles",
+      "evidenceLevel": "project-original-authoring-source",
+      "rightsUse": "authoring-source",
+      "note": "记录16位新角色的原创身份、利益、边界、可观察decisionTrace与运行时兼容字段。",
+      "url": null,
+      "accessedAt": "2026-09-01",
+      "rightsStatus": "project-original",
+      "targetJurisdictionReview": "Project-original text; public distribution still follows project privacy, trademark and release review.",
+      "transferRule": "Use only this project's authored character facts and original micro-scenes; the latest reviewed card takes precedence.",
+      "prohibitedTransfer": [
+        "cross-character memory",
+        "gender stereotypes",
+        "type-as-destiny claims",
+        "private chain-of-thought"
+      ]
+    },
+    {
+      "id": "source.r9.eu-mobility",
+      "label": "European Commission / Your Europe：在其他欧盟国家工作与居住",
+      "locator": "Working abroad and workers' residence rights",
+      "evidenceLevel": "official-public-guidance",
+      "rightsUse": "research-only",
+      "note": "只用于构造真实的跨城工作、居住登记与关系距离压力；欧盟公民跨境工作不虚构签证到期危机。",
+      "url": "https://europa.eu/youreurope/citizens/work/work-abroad/index_en.htm",
+      "accessedAt": "2026-09-01",
+      "rightsStatus": "research-only",
+      "targetJurisdictionReview": "EU public guidance; verify character citizenship and country-specific rules before any legal claim.",
+      "transferRule": "只迁移可观察的日程、跨境工作与行政选择，不复制网页文案。",
+      "prohibitedTransfer": [
+        "法律建议",
+        "虚构签证倒计时",
+        "官网原文",
+        "国籍人格化"
+      ]
+    },
+    {
+      "id": "source.r9.barcelona-creative-public-services",
+      "label": "Barcelona City Council：创意产业与数字公共服务背景",
+      "locator": "Barcelona creative industries and public digital participation ecosystem",
+      "evidenceLevel": "official-city-context",
+      "rightsUse": "research-only",
+      "note": "用于 Elena 的巴塞罗那公共服务产品工作环境，不证明人物性格。",
+      "url": "https://ajuntament.barcelona.cat/turisme/sites/default/files/barcelona_en_xifres-en-web2.pdf",
+      "accessedAt": "2026-09-01",
+      "rightsStatus": "research-only",
+      "targetJurisdictionReview": "City-level context only; character, employer and projects remain fictional.",
+      "transferRule": "只迁移城市产业语境与公共服务流程动作。",
+      "prohibitedTransfer": [
+        "复制真实机构",
+        "冒充政府项目",
+        "官网原文",
+        "城市刻板印象"
+      ]
+    },
+    {
+      "id": "source.r9.berlin-interactive-exhibitions",
+      "label": "Berlin.de：沉浸式与互动展览",
+      "locator": "Immersive and Interactive Exhibitions",
+      "evidenceLevel": "official-city-context",
+      "rightsUse": "research-only",
+      "note": "用于 Luca 的互动展览职业动作和展场语境，不复刻任何真实展项。",
+      "url": "https://www.berlin.de/en/exhibitions/interactive/",
+      "accessedAt": "2026-09-01",
+      "rightsStatus": "research-only",
+      "targetJurisdictionReview": "Official city listing; all character projects and mechanisms are original.",
+      "transferRule": "只迁移互动、声光、参与式展览的抽象工作流程。",
+      "prohibitedTransfer": [
+        "复制真实展项",
+        "使用机构商标",
+        "官网原文",
+        "天才设计师模板"
+      ]
+    },
+    {
+      "id": "source.r9.netherlands-cultural-heritage",
+      "label": "Cultural Heritage Agency of the Netherlands：收藏与修复职责",
+      "locator": "Collections and museums / what we do",
+      "evidenceLevel": "official-agency-context",
+      "rightsUse": "research-only",
+      "note": "用于 Elise 的材料、记录、负责任使用和修复流程，不复制任何真实项目。",
+      "url": "https://www.cultureelerfgoed.nl/domeinen/collecties-en-musea",
+      "accessedAt": "2026-09-01",
+      "rightsStatus": "research-only",
+      "targetJurisdictionReview": "Agency context only; fictional professional profile.",
+      "transferRule": "只迁移材料核对、记录留痕和负责任使用的职业动作。",
+      "prohibitedTransfer": [
+        "复制真实项目",
+        "冒充政府雇员",
+        "官网原文",
+        "荷兰人严谨刻板印象"
+      ]
+    },
+    {
+      "id": "source.r9.hamburg-smartport",
+      "label": "Hamburg Port Authority：smartPORT logistics",
+      "locator": "Flow of goods, sensors and rapid information sharing",
+      "evidenceLevel": "official-port-context",
+      "rightsUse": "research-only",
+      "note": "用于 Leon 的库存、冷链与信息共享职业动作；人物与节展公司均为原创。",
+      "url": "https://www.hamburg-port-authority.de/en/hpa-360/smartport",
+      "accessedAt": "2026-09-01",
+      "rightsStatus": "research-only",
+      "targetJurisdictionReview": "Port operations context only; not an HPA endorsement or employee profile.",
+      "transferRule": "只迁移货物流、传感器、信息共享和责任看板的抽象机制。",
+      "prohibitedTransfer": [
+        "冒充港务局员工",
+        "复制系统界面",
+        "官网原文",
+        "德国效率刻板印象"
+      ]
+    },
+    {
+      "id": "source.r9.ifrc-first-aid-education",
+      "label": "IFRC：International First Aid, Resuscitation, and Education Guidelines",
+      "locator": "Education modalities, contextualisation and safe classroom checklist",
+      "evidenceLevel": "international-guideline",
+      "rightsUse": "research-only",
+      "note": "用于 Mateo 的安全示范、停止信号和可退出教学结构；不把产品写成医疗建议。",
+      "url": "https://www.ifrc.org/sites/default/files/2022-02/EN_GFARC_GUIDELINES_2020.pdf",
+      "accessedAt": "2026-09-01",
+      "rightsStatus": "research-only",
+      "targetJurisdictionReview": "Training context only; verify current local guidance for real first-aid instruction.",
+      "transferRule": "只迁移情境化教学、可逆练习、反馈和安全停止结构。",
+      "prohibitedTransfer": [
+        "医疗建议",
+        "使用红十字标识",
+        "复制指南原文",
+        "冒险挑战"
+      ]
+    },
+    {
+      "id": "source.r9.lyon-markets",
+      "label": "Ville de Lyon：里昂食品市场与季节性经营",
+      "locator": "Les marchés lyonnais and local seasonal produce",
+      "evidenceLevel": "official-city-context",
+      "rightsUse": "research-only",
+      "note": "用于 Camille 的季节性菜单、市集和收摊劳动语境，不复制商户或品牌。",
+      "url": "https://www.lyon.fr/vie-pratique/commerces-locaux/les-marches-lyonnais",
+      "accessedAt": "2026-09-01",
+      "rightsStatus": "research-only",
+      "targetJurisdictionReview": "City market context only; food safety and permits remain outside the game claim.",
+      "transferRule": "只迁移季节性食材、市集营业与劳动收尾机制。",
+      "prohibitedTransfer": [
+        "复制真实商户",
+        "食品安全承诺",
+        "官网原文",
+        "法国美食刻板印象"
+      ]
     }
   ],
-  "status": "authoring-reviewed",
+  "status": "authoring-validated-candidate",
   "evidenceCards": [
     {
       "id": "evidence.mbti.infj.preference",
@@ -827,6 +985,414 @@
         "character identities"
       ],
       "verifiedAt": "2026-08-26"
+    },
+    {
+      "id": "evidence.mbti.entj.preference",
+      "sourceId": "source.mbti-type-dynamics",
+      "locator": "ENTJ type-dynamics row; Extraverted Thinking and Introverted Intuition process descriptions",
+      "claim": "ENTJ偏好镜头可能先发现流程中的矛盾和低效，再组织长期目标与执行步骤；健康表达必须公开授权、异议入口和复核条件。",
+      "evidenceClass": "observable-decision-pattern",
+      "confidence": "high",
+      "rightsStatus": "research-only",
+      "transferRule": "转写为可见问题 -> 提议目标与责任 -> 邀请反对或替代方案 -> 按新事实修订。",
+      "prohibitedTransfer": [
+        "官方原句",
+        "天生领导者定论",
+        "控制欲诊断",
+        "把强势写成性别特征"
+      ],
+      "verifiedAt": "2026-09-01"
+    },
+    {
+      "id": "evidence.mbti.entp.preference",
+      "sourceId": "source.mbti-type-dynamics",
+      "locator": "ENTP type-dynamics row; Extraverted Intuition and Introverted Thinking process descriptions",
+      "claim": "ENTP偏好镜头可能迅速提出多种概念路径并检验前提；压力下可能把不断换题误当成推进。",
+      "evidenceClass": "observable-decision-pattern",
+      "confidence": "high",
+      "rightsStatus": "research-only",
+      "transferRule": "转写为发现矛盾 -> 提两个可选假设 -> 选一项做有限验证 -> 对未完成事项给期限或退出。",
+      "prohibitedTransfer": [
+        "官方原句",
+        "抬杠人格",
+        "聪明优越论",
+        "用玩笑免除修复"
+      ],
+      "verifiedAt": "2026-09-01"
+    },
+    {
+      "id": "evidence.mbti.infp.preference",
+      "sourceId": "source.mbti-type-dynamics",
+      "locator": "INFP type-dynamics row; Introverted Feeling and Extraverted Intuition process descriptions",
+      "claim": "INFP偏好镜头可能核对选择是否符合个人价值，同时看见人的潜能和替代路径；价值受压时仍需把拒绝说成可观察边界。",
+      "evidenceClass": "observable-decision-pattern",
+      "confidence": "high",
+      "rightsStatus": "research-only",
+      "transferRule": "转写为识别价值冲突 -> 说明自己的位置 -> 给一项不背叛价值的具体选择 -> 必要时退出。",
+      "prohibitedTransfer": [
+        "官方原句",
+        "脆弱或不切实际定论",
+        "道德纯洁化",
+        "沉默等于同意"
+      ],
+      "verifiedAt": "2026-09-01"
+    },
+    {
+      "id": "evidence.mbti.enfj.preference",
+      "sourceId": "source.mbti-type-dynamics",
+      "locator": "ENFJ type-dynamics row; Extraverted Feeling and Introverted Intuition process descriptions",
+      "claim": "ENFJ偏好镜头可能注意群体需要和个人潜力并促成参与；过度使用时可能在未获同意前替别人安排成长。",
+      "evidenceClass": "observable-decision-pattern",
+      "confidence": "high",
+      "rightsStatus": "research-only",
+      "transferRule": "转写为点出可见需要 -> 询问是否要协助 -> 提供带退出权的组织动作 -> 说出自己的需要。",
+      "prohibitedTransfer": [
+        "官方原句",
+        "救世主设定",
+        "读心",
+        "把照料写成女性义务"
+      ],
+      "verifiedAt": "2026-09-01"
+    },
+    {
+      "id": "evidence.mbti.istj.preference",
+      "sourceId": "source.mbti-type-dynamics",
+      "locator": "ISTJ type-dynamics row; Introverted Sensing and Extraverted Thinking process descriptions",
+      "claim": "ISTJ偏好镜头可能依据具体记录、责任和既有标准稳步推进；新事实出现时，可靠性也包括公开修订旧流程。",
+      "evidenceClass": "observable-decision-pattern",
+      "confidence": "high",
+      "rightsStatus": "research-only",
+      "transferRule": "转写为核对记录 -> 标出责任和偏差 -> 给可执行步骤 -> 新证据成立时更新规则。",
+      "prohibitedTransfer": [
+        "官方原句",
+        "僵化守旧标签",
+        "情感迟钝定论",
+        "规则高于同意"
+      ],
+      "verifiedAt": "2026-09-01"
+    },
+    {
+      "id": "evidence.mbti.estj.preference",
+      "sourceId": "source.mbti-type-dynamics",
+      "locator": "ESTJ type-dynamics row; Extraverted Thinking and Introverted Sensing process descriptions",
+      "claim": "ESTJ偏好镜头可能快速组织现实资源、责任和标准以取得结果；有效推进必须先确认任务授权并允许不同执行方案。",
+      "evidenceClass": "observable-decision-pattern",
+      "confidence": "high",
+      "rightsStatus": "research-only",
+      "transferRule": "转写为盘点资源 -> 明确负责人和期限 -> 询问异议 -> 以结果复盘而非人格归因。",
+      "prohibitedTransfer": [
+        "官方原句",
+        "霸道主管模板",
+        "效率合理化越界",
+        "把领导写成男性特权"
+      ],
+      "verifiedAt": "2026-09-01"
+    },
+    {
+      "id": "evidence.mbti.isfp.preference",
+      "sourceId": "source.mbti-type-dynamics",
+      "locator": "ISFP type-dynamics row; Introverted Feeling and Extraverted Sensing process descriptions",
+      "claim": "ISFP偏好镜头可能在当下感受、个人空间和价值一致之间做选择；避免冲突不能替代明确拒绝。",
+      "evidenceClass": "observable-decision-pattern",
+      "confidence": "high",
+      "rightsStatus": "research-only",
+      "transferRule": "转写为注意现场感受 -> 说明个人偏好或不适 -> 给低压力选择 -> 边界持续被越过时离开。",
+      "prohibitedTransfer": [
+        "官方原句",
+        "柔弱艺术家模板",
+        "永不冲突",
+        "审美等于女性气质"
+      ],
+      "verifiedAt": "2026-09-01"
+    },
+    {
+      "id": "evidence.mbti.esfp.preference",
+      "sourceId": "source.mbti-type-dynamics",
+      "locator": "ESFP type-dynamics row; Extraverted Sensing and Introverted Feeling process descriptions",
+      "claim": "ESFP偏好镜头可能迅速读取现场人与物并通过共同尝试推进；热烈必须保留节奏、同意和后续兑现。",
+      "evidenceClass": "observable-decision-pattern",
+      "confidence": "high",
+      "rightsStatus": "research-only",
+      "transferRule": "转写为捕捉现场线索 -> 发起可逆行动 -> 确认参与和速度 -> 当日完成一项收尾。",
+      "prohibitedTransfer": [
+        "官方原句",
+        "派对动物标签",
+        "冲动失责定论",
+        "活泼等于幼态"
+      ],
+      "verifiedAt": "2026-09-01"
+    },
+    {
+      "id": "evidence.r9.shaozheng.authored-profile",
+      "sourceId": "source.r9-character-authoring",
+      "locator": "content/character_cards.r9/analysts.json#cards[id=shaozheng]",
+      "claim": "邵峥的独特性来自演出统筹事故后的信息透明原则：他不是只会拍板，而是学习让异议进入决定。",
+      "evidenceClass": "observable-decision-pattern",
+      "confidence": "high",
+      "rightsStatus": "project-original",
+      "transferRule": "保留目标、授权、异议和公开改版的动作链；不得泛化为ENTJ或男性都应领导。",
+      "prohibitedTransfer": [
+        "旧角色身世",
+        "霸总台词",
+        "性别化领导",
+        "类型决定论"
+      ],
+      "verifiedAt": "2026-09-01"
+    },
+    {
+      "id": "evidence.r9.qince.authored-profile",
+      "sourceId": "source.r9-character-authoring",
+      "locator": "content/character_cards.r9/analysts.json#cards[id=qince]",
+      "claim": "Elena 通过受益者、代价与申诉入口判断行动，跨境工作只制造真实日程与距离压力，不用国籍替代人格。",
+      "evidenceClass": "observable-decision-pattern",
+      "confidence": "high",
+      "rightsStatus": "project-original",
+      "transferRule": "保留授权、责任对称、退出条款和真实跨城日程；不得复制成通用女强人、异国滤镜或律师审讯模板。",
+      "prohibitedTransfer": [
+        "强势女性反差",
+        "无限提供建议",
+        "替他人发言",
+        "类型决定论"
+      ],
+      "verifiedAt": "2026-09-01"
+    },
+    {
+      "id": "evidence.r9.jiheng.authored-profile",
+      "sourceId": "source.r9-character-authoring",
+      "locator": "content/character_cards.r9/analysts.json#cards[id=jiheng]",
+      "claim": "Luca 用可证伪小原型推进关系，真正的成长不是更聪明，而是停止跨城换题并完成一项共同承诺。",
+      "evidenceClass": "observable-decision-pattern",
+      "confidence": "high",
+      "rightsStatus": "project-original",
+      "transferRule": "保留假设、有限试验和收尾；不得变成抬杠、花心或天才儿童模板。",
+      "prohibitedTransfer": [
+        "隐私实验",
+        "段子化道歉",
+        "聪明优越论",
+        "类型决定论"
+      ],
+      "verifiedAt": "2026-09-01"
+    },
+    {
+      "id": "evidence.r9.xiache.authored-profile",
+      "sourceId": "source.r9-character-authoring",
+      "locator": "content/character_cards.r9/analysts.json#cards[id=xiache]",
+      "claim": "夏澈用语境、授权和撤回权约束好奇；她的机敏不服务于公开别人，而服务于防止误读。",
+      "evidenceClass": "observable-decision-pattern",
+      "confidence": "high",
+      "rightsStatus": "project-original",
+      "transferRule": "保留补语境、关录音和自己先回答的动作；不得转成毒舌、八卦或女性反差。",
+      "prohibitedTransfer": [
+        "未经同意的录音",
+        "毒舌模板",
+        "隐私商品化",
+        "类型决定论"
+      ],
+      "verifiedAt": "2026-09-01"
+    },
+    {
+      "id": "evidence.r9.zhouyan.authored-profile",
+      "sourceId": "source.r9-character-authoring",
+      "locator": "content/character_cards.r9/diplomats.json#cards[id=zhouyan]",
+      "claim": "周砚以作品与无障碍策展承载价值，但他的修复方式是及时说清可协商范围，而非浪漫化沉默。",
+      "evidenceClass": "observable-decision-pattern",
+      "confidence": "high",
+      "rightsStatus": "project-original",
+      "transferRule": "保留价值、具体作品动作和替代路径；不得写成脆弱诗人或道德裁判。",
+      "prohibitedTransfer": [
+        "文艺空话",
+        "道德优越",
+        "男性温柔反差",
+        "类型决定论"
+      ],
+      "verifiedAt": "2026-09-01"
+    },
+    {
+      "id": "evidence.r9.ningzhi.authored-profile",
+      "sourceId": "source.r9-character-authoring",
+      "locator": "content/character_cards.r9/diplomats.json#cards[id=ningzhi]",
+      "claim": "宁栀以无障碍旅行中的真实空间选择建立人物行动，她的温和始终包含自主、拒绝和改道。",
+      "evidenceClass": "observable-decision-pattern",
+      "confidence": "high",
+      "rightsStatus": "project-original",
+      "transferRule": "保留询问、路线和退出权；不得转成被帮助者、柔弱女性或治愈系标签。",
+      "prohibitedTransfer": [
+        "健康猜测",
+        "软萌模板",
+        "牺牲型照料",
+        "类型决定论"
+      ],
+      "verifiedAt": "2026-09-01"
+    },
+    {
+      "id": "evidence.r9.xuhang.authored-profile",
+      "sourceId": "source.r9-character-authoring",
+      "locator": "content/character_cards.r9/diplomats.json#cards[id=xuhang]",
+      "claim": "许航会设计自愿参与，但人物核心是学会离开主持位、拒绝情绪托管并说出个人需要。",
+      "evidenceClass": "observable-decision-pattern",
+      "confidence": "high",
+      "rightsStatus": "project-original",
+      "transferRule": "保留邀请、退出权和去主持化动作；不得写成救世主、导师或男性温柔反差。",
+      "prohibitedTransfer": [
+        "心理治疗",
+        "替人发言",
+        "永远圆场",
+        "类型决定论"
+      ],
+      "verifiedAt": "2026-09-01"
+    },
+    {
+      "id": "evidence.r9.gutang.authored-profile",
+      "sourceId": "source.r9-character-authoring",
+      "locator": "content/character_cards.r9/diplomats.json#cards[id=gutang]",
+      "claim": "顾棠以社区体育中的角色轮换解决参与问题，她会鼓励但不把退出改写成换岗。",
+      "evidenceClass": "observable-decision-pattern",
+      "confidence": "high",
+      "rightsStatus": "project-original",
+      "transferRule": "保留参与选择、责任轮换和哨子交接；不得写成热血教练、女性照料者或永动机。",
+      "prohibitedTransfer": [
+        "团队绑架",
+        "可爱腔",
+        "救世主",
+        "类型决定论"
+      ],
+      "verifiedAt": "2026-09-01"
+    },
+    {
+      "id": "evidence.r9.yanxu.authored-profile",
+      "sourceId": "source.r9-character-authoring",
+      "locator": "content/character_cards.r9/sentinels.json#cards[id=yanxu]",
+      "claim": "严序依靠记录和变更说明建立安全，成长点是让新事实更新旧流程，而非要求世界永远不变。",
+      "evidenceClass": "observable-decision-pattern",
+      "confidence": "high",
+      "rightsStatus": "project-original",
+      "transferRule": "保留时间线、变更和减量复核；不得写成冷硬规章机器或占有型保护者。",
+      "prohibitedTransfer": [
+        "监控式关心",
+        "守旧标签",
+        "男性保护义务",
+        "类型决定论"
+      ],
+      "verifiedAt": "2026-09-01"
+    },
+    {
+      "id": "evidence.r9.jianning.authored-profile",
+      "sourceId": "source.r9-character-authoring",
+      "locator": "content/character_cards.r9/sentinels.json#cards[id=jianning]",
+      "claim": "Elise 通过材料口径、修订留痕和有限求助建立关系；跨城修复经历不等于国籍刻板印象，她的独立也不取消被支持的需要。",
+      "evidenceClass": "observable-decision-pattern",
+      "confidence": "high",
+      "rightsStatus": "project-original",
+      "transferRule": "保留事实核对、公开修订和不接管式帮助；不得写成冰山女强人或精打细算刻板印象。",
+      "prohibitedTransfer": [
+        "性别化专业评价",
+        "接管式帮助",
+        "冷漠模板",
+        "类型决定论"
+      ],
+      "verifiedAt": "2026-09-01"
+    },
+    {
+      "id": "evidence.r9.luozheng.authored-profile",
+      "sourceId": "source.r9-character-authoring",
+      "locator": "content/character_cards.r9/sentinels.json#cards[id=luozheng]",
+      "claim": "Leon 以现实资源和交付组织行动，跨境供应链只提供具体工作压力；人物修复在于询问授权、接受不同方法并承担越权返工。",
+      "evidenceClass": "observable-decision-pattern",
+      "confidence": "high",
+      "rightsStatus": "project-original",
+      "transferRule": "保留库存、负责人和替代方案；不得写成爹味主管、男性主导或效率至上。",
+      "prohibitedTransfer": [
+        "公开羞辱",
+        "性别化领导",
+        "人情记账",
+        "类型决定论"
+      ],
+      "verifiedAt": "2026-09-01"
+    },
+    {
+      "id": "evidence.r9.chengqing.authored-profile",
+      "sourceId": "source.r9-character-authoring",
+      "locator": "content/character_cards.r9/sentinels.json#cards[id=chengqing]",
+      "claim": "程清的行动链是先保安全、再归还责任和复盘；她拒绝用无限救场证明能力或亲密。",
+      "evidenceClass": "observable-decision-pattern",
+      "confidence": "high",
+      "rightsStatus": "project-original",
+      "transferRule": "保留风险、容量和责任板；不得写成女强人、项目经理恋爱或公开训人。",
+      "prohibitedTransfer": [
+        "性别化领导",
+        "公开羞辱",
+        "能者多劳",
+        "类型决定论"
+      ],
+      "verifiedAt": "2026-09-01"
+    },
+    {
+      "id": "evidence.r9.xiemu.authored-profile",
+      "sourceId": "source.r9-character-authoring",
+      "locator": "content/character_cards.r9/explorers.json#cards[id=xiemu]",
+      "claim": "谢牧通过声音授权、共享安静和回来补说建立关系；他的沉默不是谜面，也不能替代明确边界。",
+      "evidenceClass": "observable-decision-pattern",
+      "confidence": "high",
+      "rightsStatus": "project-original",
+      "transferRule": "保留关设备、授权范围和安静陪伴；不得写成忧郁艺术家、神秘男人或冲突逃避者。",
+      "prohibitedTransfer": [
+        "未授权录音",
+        "神秘化沉默",
+        "男性温柔反差",
+        "类型决定论"
+      ],
+      "verifiedAt": "2026-09-01"
+    },
+    {
+      "id": "evidence.r9.yaoyin.authored-profile",
+      "sourceId": "source.r9-character-authoring",
+      "locator": "content/character_cards.r9/explorers.json#cards[id=yaoyin]",
+      "claim": "姚音通过材料触感与逐次同意建立角色，审美服务于主体选择而非性别化取悦。",
+      "evidenceClass": "observable-decision-pattern",
+      "confidence": "high",
+      "rightsStatus": "project-original",
+      "transferRule": "保留停手、退开、卸除和重新询问；不得写成甜妹化妆师、美貌服务者或身体越界。",
+      "prohibitedTransfer": [
+        "外貌羞辱",
+        "甜妹模板",
+        "未经同意触碰",
+        "类型决定论"
+      ],
+      "verifiedAt": "2026-09-01"
+    },
+    {
+      "id": "evidence.r9.hanxi.authored-profile",
+      "sourceId": "source.r9-character-authoring",
+      "locator": "content/character_cards.r9/explorers.json#cards[id=hanxi]",
+      "claim": "Mateo 以急救训练的可逆动作和停止信号建立现场活力；多语误会只提供具体事件，不以西班牙背景解释他的热情。",
+      "evidenceClass": "observable-decision-pattern",
+      "confidence": "high",
+      "rightsStatus": "project-original",
+      "transferRule": "保留示范、停止权和归位；不得写成快乐小狗、冒险莽撞或男性幼态。",
+      "prohibitedTransfer": [
+        "恐惧起哄",
+        "幼态模板",
+        "强迫身体行动",
+        "类型决定论"
+      ],
+      "verifiedAt": "2026-09-01"
+    },
+    {
+      "id": "evidence.r9.luoxing.authored-profile",
+      "sourceId": "source.r9-character-authoring",
+      "locator": "content/character_cards.r9/explorers.json#cards[id=luoxing]",
+      "claim": "Camille 用现场试味和真实劳动建立热烈；跨城市集制造日程压力，她的核心边界仍是准时关火、不过度服务并让亲密延续到收工之后。",
+      "evidenceClass": "observable-decision-pattern",
+      "confidence": "high",
+      "rightsStatus": "project-original",
+      "transferRule": "保留试味、劳动分工和关火；不得写成可爱吃货、投喂型女性或永远元气。",
+      "prohibitedTransfer": [
+        "可爱吃货",
+        "投喂绑架",
+        "无偿照料",
+        "类型决定论"
+      ],
+      "verifiedAt": "2026-09-01"
     }
   ],
   "rightsReview": {
@@ -851,11 +1417,13 @@
       "source.time-machine",
       "source.tom-sawyer",
       "source.twenty-thousand-leagues",
-      "source.wind-in-the-willows"
+      "source.wind-in-the-willows",
+      "source.r9-character-authoring"
     ],
     "blockedSourceIds": [],
     "policySourceId": "source.project-gutenberg-license",
     "runtimeRule": "Runtime receives only original project fewShots and behavior rules, never source passages, character identities or author-style imitation instructions.",
-    "reviewBoundary": "Authoring-level rights check only; not a substitute for counsel on distribution, translations, trademarks or bundled Gutenberg files."
+    "reviewBoundary": "Authoring-level rights check only; not a substitute for counsel on distribution, translations, trademarks or bundled Gutenberg files.",
+    "mbtiBoundary": "MBTI sources support only abstract, non-diagnostic preference lenses; they never establish a complete or unique personality."
   }
 }
