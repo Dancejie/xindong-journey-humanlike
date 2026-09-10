@@ -15,6 +15,18 @@ cd "$PROJECT_DIR"
 export LANG="C.UTF-8"
 export LC_ALL="C.UTF-8"
 
+# launchd does not inherit the interactive shell's Homebrew PATH. Reuse the
+# installed media validator so enabling video cannot fail solely under launchd.
+if ! command -v ffprobe >/dev/null 2>&1; then
+  for custom_video_bin_dir in /opt/homebrew/bin /usr/local/bin; do
+    if [[ -x "$custom_video_bin_dir/ffprobe" ]]; then
+      export PATH="$custom_video_bin_dir:$PATH"
+      break
+    fi
+  done
+  unset custom_video_bin_dir
+fi
+
 if ! "$PG_ISREADY_BIN" -h 127.0.0.1 -p 5432 -q; then
   "$PG_CTL_BIN" -D "$RUNTIME_DIR/postgres" -l "$RUNTIME_DIR/postgres.log" start
 fi
@@ -48,6 +60,43 @@ if [[ -f "$LEGACY_LLM_ENV_PATH" || -n "$LLM_ENV_PATH" ]]; then
   set +a
 else
   echo "No local LLM env file found; using already exported environment variables." >&2
+fi
+
+# Custom video uses the existing approved provider key without copying it into
+# tracked sources. Its independently approved batch budget is never inherited
+# from an older media job. This local file is ignored by git.
+CUSTOM_VIDEO_ENV_PATH="${CUSTOM_VIDEO_ENV_FILE:-$PROJECT_DIR/.env.custom-video.local}"
+if [[ -r "$CUSTOM_VIDEO_ENV_PATH" ]]; then
+  set -a
+  source "$CUSTOM_VIDEO_ENV_PATH"
+  set +a
+fi
+if [[ -z "${CUSTOM_VIDEO_API_KEY:-}" && -n "${CUSTOM_VIDEO_CREDENTIALS_FILE:-}" ]]; then
+  if [[ -r "$CUSTOM_VIDEO_CREDENTIALS_FILE" ]]; then
+    custom_video_credentials_mode=$(stat -f '%Lp' "$CUSTOM_VIDEO_CREDENTIALS_FILE" 2>/dev/null || stat -c '%a' "$CUSTOM_VIDEO_CREDENTIALS_FILE" 2>/dev/null || true)
+    if [[ "$custom_video_credentials_mode" == "600" || "$custom_video_credentials_mode" == "400" ]]; then
+      # Parse only the key, never execute a shared credential file as shell.
+      if { while IFS='=' read -r custom_video_key_name custom_video_key_value || [[ -n "$custom_video_key_name$custom_video_key_value" ]]; do
+        if [[ "$custom_video_key_name" == "FUMIN_API_KEY" ]]; then
+          custom_video_key_value="${custom_video_key_value%$'\r'}"
+          custom_video_key_value="${custom_video_key_value#\"}"
+          custom_video_key_value="${custom_video_key_value%\"}"
+          custom_video_key_value="${custom_video_key_value#\'}"
+          custom_video_key_value="${custom_video_key_value%\'}"
+          export CUSTOM_VIDEO_API_KEY="$custom_video_key_value"
+        fi
+      done < "$CUSTOM_VIDEO_CREDENTIALS_FILE"; } 2>/dev/null; then
+        :
+      else
+        echo "Custom video credentials could not be read; photo-based play remains enabled." >&2
+      fi
+      unset custom_video_key_name custom_video_key_value
+    else
+      echo "Custom video credentials require file mode 600 or 400; video stays unavailable." >&2
+    fi
+  else
+    echo "Custom video credentials are unavailable; photo-based play remains enabled." >&2
+  fi
 fi
 export APP_AUTH_MODE=public
 export DATABASE_URL="${DATABASE_URL:-postgresql://postgres@127.0.0.1:5432/cowork_dev}"

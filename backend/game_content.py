@@ -5,15 +5,109 @@ import json
 import re
 from hashlib import sha256
 from copy import deepcopy
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
+from functools import wraps
+from inspect import signature
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+
+_CUSTOM_PLAYER_CARD: ContextVar[dict[str, Any] | None] = ContextVar("custom_player_card", default=None)
+
+
+def _custom_card_from_snapshot(snapshot: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not snapshot or not snapshot.get("customPlayerCard"):
+        return None
+    card = snapshot["customPlayerCard"]
+    perspective_id = snapshot.get("player", {}).get("perspectiveCharacterId")
+    if (not isinstance(card, dict) or not card.get("isCustom")
+            or not str(card.get("id", "")).startswith("custom-")
+            or (perspective_id and card.get("id") != perspective_id)):
+        raise ValueError("自定义角色与本局身份不一致，请重新选择自己的角色。")
+    return card
+
+
+@contextmanager
+def character_scope(snapshot: dict[str, Any] | None):
+    """A request/task-local overlay: uploaded identities never enter the shared roster."""
+    token = _CUSTOM_PLAYER_CARD.set(_custom_card_from_snapshot(snapshot))
+    try:
+        yield
+    finally:
+        _CUSTOM_PLAYER_CARD.reset(token)
+
+
+def with_player_card(function):
+    """Bind an explicitly supplied snapshot for the duration of a pure engine call."""
+    call_signature = signature(function)
+
+    @wraps(function)
+    def scoped(*args, **kwargs):
+        arguments = call_signature.bind_partial(*args, **kwargs).arguments
+        snapshot = arguments.get("snapshot", arguments.get("state"))
+        if snapshot is None and arguments.get("custom_player_card") is not None:
+            snapshot = {"customPlayerCard": arguments["custom_player_card"]}
+        with character_scope(snapshot):
+            return function(*args, **kwargs)
+    return scoped
+
+
+class _CharacterMap(Mapping):
+    """Read-only library with at most one explicitly scoped custom player."""
+
+    def __init__(self, library: dict[str, Any], *, public: bool = False):
+        self._library = library
+        self._public = public
+
+    def __getitem__(self, key: str):
+        custom = _CUSTOM_PLAYER_CARD.get()
+        if custom is not None and key == custom["id"]:
+            return _public_character(custom) if self._public else custom
+        return self._library[key]
+
+    def __iter__(self) -> Iterator[str]:
+        yield from self._library
+        custom = _CUSTOM_PLAYER_CARD.get()
+        if custom is not None:
+            yield custom["id"]
+
+    def __len__(self) -> int:
+        return len(self._library) + int(_CUSTOM_PLAYER_CARD.get() is not None)
+
+
+def player_card_for(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Resolve an owner's player card without registering it in module-global data."""
+    with character_scope(snapshot):
+        return deepcopy(CHARACTER_CARD_MAP[snapshot["player"]["perspectiveCharacterId"]])
+
+
+def introduction_fallbacks(character_id: str) -> dict[str, tuple[str, str]]:
+    if character_id in INTRODUCTION_FALLBACKS:
+        return INTRODUCTION_FALLBACKS[character_id]
+    card = CHARACTER_CARD_MAP[character_id]
+    name, mbti = card["names"]["primary"], card["mbti"]
+    facts = card.get("sourceProfile", {}).get("facts", {})
+    occupation = str(facts.get("occupation") or "")
+    background = f"我做{occupation}。" if occupation and "未公开" not in occupation else "我们先从日常小事聊起。"
+    intro = str(card.get("customIntroduction") or "")
+    background_present = occupation in intro if occupation and "未公开" not in occupation else any(word in intro for word in ("平时", "日常", "喜欢"))
+    if not (name in intro and mbti in intro and background_present and len(intro) <= 280 and re.search(r"(?:来这里|这次来|这七天).{0,28}(?:想|希望|试试)", intro)):
+        public_about = str(facts.get("publicPersona") or "").strip()[:64]
+        intro = f"大家好，我叫{name}，MBTI是{mbti}。{background}{public_about}。来这里，想和大家慢慢认识。".replace("。。", "。")
+    return {
+        "intro-clear": (intro, "用自己的话介绍自己，下一步也可以直接编辑"),
+        "intro-question": (f"我叫{name}，{mbti}。{background}这次来想认识聊得来的人。大家想先从哪儿聊起？", "简单开个头，把话题留给大家"),
+        "intro-honest": (f"我是{name}，{mbti}。{background}来这里，想试试用自己舒服的节奏认识人，不着急给这次相遇定结论。", "只说自己确定的部分，不用一次交代全部"),
+    }
+
 ROOT = Path(__file__).resolve().parent.parent
 RELATIONSHIP_AXES = ("trust", "affection", "respect", "fear", "debt", "attraction", "resentment")
 ATTITUDES = {"warm", "curious", "guarded", "challenging", "vulnerable", "softened", "uncertain", "honest", "moved", "careful", "steady", "boundary"}
-CONTENT_VERSION = "4.1.0-full-mbti-lite-r10"
+CONTENT_VERSION = "4.2.3-custom-player-video-r11"
 CHAT_CONTEXT_VERSION = 1
 CHAT_LOCATIONS = {
     "hotel-entrance": {"name": "酒店玄关", "supportsGroup": True},
@@ -94,6 +188,7 @@ def _sanitize_generated_kaomoji(text: str) -> str:
     return re.sub(r"[ \t]{2,}", " ", sanitized).strip()
 
 
+@with_player_card
 def _player_suggestion_surface_policy(
     snapshot: dict[str, Any], target_card: dict[str, Any], dialogue: str = "", player_text: str = "",
     attitude: str | None = None,
@@ -427,7 +522,7 @@ def _asset_is_runtime_ready(asset: dict[str, Any]) -> bool:
 CARD_PACKAGE = _load_json("character_cards.v3.json")
 PLAYER_GROUPS: dict[str, list[str]] = CARD_PACKAGE["playerGroups"]
 CHARACTER_CARDS: list[dict[str, Any]] = CARD_PACKAGE["cards"]
-CHARACTER_CARD_MAP = {card["id"]: card for card in CHARACTER_CARDS}
+CHARACTER_CARD_MAP = _CharacterMap({card["id"]: card for card in CHARACTER_CARDS})
 _ensure_full_roster_surface_contracts()
 RUNTIME_ASSET_MAP = _runtime_asset_map()
 
@@ -438,7 +533,10 @@ def _public_character(card: dict[str, Any]) -> dict[str, Any]:
     identity_portrait_file = ROOT / "frontend" / "public" / identity_portrait.lstrip("/")
     concept_portrait = f"/media/selection-anchors/{card['id']}.jpg"
     concept_portrait_file = ROOT / "frontend" / "public" / concept_portrait.lstrip("/")
-    if identity_portrait and identity_portrait_file.is_file():
+    if card.get("isCustom") and identity_portrait.startswith("/api/custom-media/"):
+        projected_portrait = identity_portrait
+        portrait_kind = "uploaded-identity-portrait"
+    elif identity_portrait and identity_portrait_file.is_file():
         projected_portrait = identity_portrait
         portrait_kind = "identity-portrait"
     elif concept_portrait_file.is_file():
@@ -469,7 +567,7 @@ def _public_character(card: dict[str, Any]) -> dict[str, Any]:
     raw_age = facts.get("age")
     age = raw_age if isinstance(raw_age, int) and raw_age > 0 else None
     return {
-        "id": card["id"], "name": card["names"]["primary"], "mbti": card["mbti"],
+        "id": card["id"], "name": card["names"]["primary"], "mbti": card["mbti"], "isCustom": bool(card.get("isCustom")),
         "tagline": card["tagline"], "accent": card["accent"], "portrait": projected_portrait,
         "portraitKind": portrait_kind, "identityPortrait": identity_portrait,
         "video": projected_video, "age": age, "occupation": occupation,
@@ -488,7 +586,7 @@ def _public_character(card: dict[str, Any]) -> dict[str, Any]:
 
 
 CHARACTERS = [_public_character(card) for card in CHARACTER_CARDS]
-CHARACTER_MAP = {character["id"]: character for character in CHARACTERS}
+CHARACTER_MAP = _CharacterMap({character["id"]: character for character in CHARACTERS}, public=True)
 LEGACY_CAST_IDS = tuple(card["id"] for card in CHARACTER_CARDS[:8])
 ROSTER_GENDERS = ("男性", "女性")
 MEDIA_ROTATION_ANCHORS = {
@@ -611,6 +709,7 @@ def media_rotation_for(
     }
 
 
+@with_player_card
 def active_cast_ids(snapshot: dict[str, Any]) -> list[str]:
     perspective_id = str(snapshot.get("player", {}).get("perspectiveCharacterId") or "")
     cast = snapshot.get("castIds")
@@ -1109,6 +1208,7 @@ def resolve_identity_safe_media(
     }
 
 
+@with_player_card
 def day1_media_context(state: dict[str, Any], node: dict[str, Any] | None = None) -> dict[str, Any]:
     """Project an engine-owned media cue; model-written copy cannot alter asset routing."""
     node_id = state["nodeId"]
@@ -1175,7 +1275,7 @@ def build_fallback_script_flavor(perspective_character_id: str, cast_ids: list[s
     for choice, target_id in zip(nodes["cast-first-impressions"]["choices"], targets):
         label, hint = CAST_FIRST_IMPRESSION_FALLBACKS[target_id]
         choice.update({"label": label, "hint": hint, "targetCharacterId": target_id})
-    intro_copy = INTRODUCTION_FALLBACKS[perspective_character_id]
+    intro_copy = introduction_fallbacks(perspective_character_id)
     for choice in nodes["introductions"]["choices"]:
         label, hint = intro_copy[choice["id"]]
         choice.update({"label": label, "hint": hint, "introductionMode": INTRODUCTION_MODES[choice["id"]]})
@@ -1189,7 +1289,12 @@ def build_fallback_script_flavor(perspective_character_id: str, cast_ids: list[s
     }
 
 
-def create_snapshot(user_mbti: str = "INFP", perspective_character_id: str | None = None) -> dict[str, Any]:
+@with_player_card
+def create_snapshot(user_mbti: str = "INFP", perspective_character_id: str | None = None, custom_player_card: dict[str, Any] | None = None) -> dict[str, Any]:
+    if custom_player_card is not None:
+        if perspective_character_id not in (None, custom_player_card["id"]) or user_mbti != custom_player_card["mbti"]:
+            raise ValueError("自定义角色与所选 MBTI 不一致。")
+        perspective_character_id = custom_player_card["id"]
     if perspective_character_id not in CHARACTER_MAP:
         perspective_character_id = CHARACTER_CARDS[0]["id"]
     run_id = str(uuid4())
@@ -1213,6 +1318,9 @@ def create_snapshot(user_mbti: str = "INFP", perspective_character_id: str | Non
         "scriptFlavor": build_fallback_script_flavor(perspective_character_id, cast_ids),
         "cinematicReceipt": None, "createdAt": utc_now(), "updatedAt": utc_now()
     }
+    if custom_player_card is not None:
+        snapshot["customPlayerCard"] = deepcopy(custom_player_card)
+        snapshot["player"].update({"isCustom": True, "customCharacterId": perspective_character_id})
     _refresh_scene_presence(snapshot)
     return snapshot
 
@@ -1227,6 +1335,7 @@ def _scene_context_for_node(node_id: str) -> dict[str, Any]:
     }
 
 
+@with_player_card
 def _refresh_scene_presence(state: dict[str, Any]) -> None:
     """Keep a deterministic, public occupancy map for contextual chat discovery."""
     scene = _scene_context_for_node(str(state.get("nodeId") or "arrival-context"))
@@ -1262,6 +1371,7 @@ def _refresh_scene_presence(state: dict[str, Any]) -> None:
     state["characterPresence"] = presence
 
 
+@with_player_card
 def normalize_conversation_context(
     snapshot: dict[str, Any], supplied: dict[str, Any] | None = None,
     participant_ids: list[str] | None = None, channel: str = "1v1",
@@ -1317,6 +1427,7 @@ def normalize_conversation_context(
     }
 
 
+@with_player_card
 def available_chat_contexts(snapshot: dict[str, Any]) -> dict[str, Any]:
     state = migrate_snapshot(snapshot); assert state is not None
     perspective_id = state["player"]["perspectiveCharacterId"]
@@ -1368,6 +1479,7 @@ def available_chat_contexts(snapshot: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+@with_player_card
 def migrate_snapshot(snapshot: dict[str, Any] | None) -> dict[str, Any] | None:
     if not snapshot:
         return None
@@ -1378,6 +1490,8 @@ def migrate_snapshot(snapshot: dict[str, Any] | None) -> dict[str, Any] | None:
     state.setdefault("player", {}).setdefault("perspectiveCharacterId", CHARACTER_CARDS[0]["id"])
     perspective_id = state["player"]["perspectiveCharacterId"]
     if perspective_id not in CHARACTER_MAP:
+        if str(perspective_id).startswith("custom-"):
+            raise ValueError("自定义角色资料缺失，请回到角色选择重新载入。")
         perspective_id = CHARACTER_CARDS[0]["id"]
         state["player"]["perspectiveCharacterId"] = perspective_id
     cast_ids = active_cast_ids(state)
@@ -1409,6 +1523,8 @@ def migrate_snapshot(snapshot: dict[str, Any] | None) -> dict[str, Any] | None:
     state["player"].setdefault("group", player_group(state.get("player", {}).get("mbti", "INFP")))
     state["player"]["gender"] = CHARACTER_MAP[perspective_id]["gender"]
     state["player"]["displayName"] = CHARACTER_MAP[perspective_id]["name"]
+    if state.get("customPlayerCard"):
+        state["player"].update({"isCustom": True, "customCharacterId": perspective_id})
     state.setdefault("guidedTargetCharacterId", None)
     state.setdefault("pendingInteraction", None)
     state.setdefault("agentConversations", {})
@@ -1476,6 +1592,7 @@ def _letter_recipient_ids(state: dict[str, Any]) -> list[str]:
     return ranked[:3]
 
 
+@with_player_card
 def heart_message_suggestions(state: dict[str, Any], character_id: str) -> list[dict[str, str]]:
     character = CHARACTER_MAP[character_id]
     memories = [item for item in state.get("echoMemories", []) if item.get("characterId") == character_id]
@@ -1532,6 +1649,7 @@ def _resolve_choice_custom_text(custom_text: str | None) -> str | None:
     return text
 
 
+@with_player_card
 def apply_choice(
     snapshot: dict[str, Any], choice_id: str, character_id: str | None = None,
     custom_text: str | None = None, suggestion_id: str | None = None,
@@ -1648,6 +1766,7 @@ def apply_choice(
     return state, receipt
 
 
+@with_player_card
 def _fallback_typed_suggestions(
     snapshot: dict[str, Any], card: dict[str, Any], dialogue: str, player_text: str = "",
     attitude: str | None = None,
@@ -1700,6 +1819,7 @@ def _fallback_typed_suggestions(
     return items
 
 
+@with_player_card
 def _normalize_agent_suggestions(
     card: dict[str, Any], payload: dict[str, Any], snapshot: dict[str, Any] | None, dialogue: str, player_text: str,
 ) -> list[dict[str, str]]:
@@ -1797,6 +1917,7 @@ def _dialogue_tokens(text: str) -> set[str]:
     return {normalized[index:index + 2] for index in range(len(normalized) - 1)}
 
 
+@with_player_card
 def detect_repetitive_agent_reply(snapshot: dict[str, Any], character_id: str, dialogue: str) -> str | None:
     """Return a public-safe reason when a generated reply loops over recent copy."""
     current = _dialogue_tokens(dialogue)
@@ -1828,6 +1949,7 @@ def detect_repetitive_agent_reply(snapshot: dict[str, Any], character_id: str, d
     return None
 
 
+@with_player_card
 def validate_agent_turn(
     card: dict[str, Any],
     payload: dict[str, Any],
@@ -1852,6 +1974,7 @@ def validate_agent_turn(
     for authored_name in [
         card.get("names", {}).get("primary"),
         *(card.get("names", {}).get("aliases") or []),
+        (snapshot or {}).get("player", {}).get("displayName"),
     ]:
         allowed_latin_tokens.update(
             token.upper() for token in re.findall(r"[A-Za-z]{3,}", str(authored_name or ""))
@@ -2005,6 +2128,7 @@ def validate_agent_turn(
     }
 
 
+@with_player_card
 def commit_agent_turn(
     snapshot: dict[str, Any], character_id: str, player_text: str, payload: dict[str, Any],
     conversation_context: dict[str, Any] | None = None,
@@ -2151,6 +2275,9 @@ def _project_script_flavor(state: dict[str, Any], node: dict[str, Any]) -> dict[
 def _public_snapshot(state: dict[str, Any]) -> dict[str, Any]:
     """Keep internal model provenance while exposing provider names only."""
     public_state = deepcopy(state)
+    # The owner sees their own generated display card, not the private source
+    # profile, upload authorization, or the full model-conditioning document.
+    public_state.pop("customPlayerCard", None)
     flavor = public_state.get("scriptFlavor")
     if isinstance(flavor, dict):
         generator = flavor.get("generator")
@@ -2169,6 +2296,7 @@ def _public_snapshot(state: dict[str, Any]) -> dict[str, Any]:
     return public_state
 
 
+@with_player_card
 def project_view(snapshot: dict[str, Any]) -> dict[str, Any]:
     state = migrate_snapshot(snapshot); assert state is not None
     node = _project_script_flavor(state, deepcopy(NODES[state["nodeId"]]))

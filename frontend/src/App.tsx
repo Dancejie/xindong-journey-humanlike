@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from './ui/Icon'
+import { CustomCharacterCreator, CustomCharacterProfile } from './CustomCharacterCreator'
 import './styles.css'
 
 type Character = {
@@ -12,7 +13,7 @@ type Character = {
   portraitKind?: 'identity-portrait' | 'mbti-gender-concept-anchor' | 'missing-planned-identity' | string
   identityPortrait?: string
   opener?: ChatOpener | string; openingLine?: string; suggestedPrompts?: ChatSuggestionInput[]
-  isPlayerPerspective?: boolean; chatEnabled?: boolean; isGuidedTarget?: boolean
+  isPlayerPerspective?: boolean; chatEnabled?: boolean; isGuidedTarget?: boolean; isCustom?: boolean
   location?: string; availableAtLocations?: string[]; groupChatEnabled?: boolean
 }
 
@@ -99,7 +100,7 @@ type ChatOpenerPayload = {
 
 type Snapshot = {
   runId: string; revision: number; nodeId: string
-  player: { mbti: string; displayName: string; gender?: string; perspectiveCharacterId?: string }
+  player: { mbti: string; displayName: string; gender?: string; perspectiveCharacterId?: string; customCharacterId?: string }
   castIds?: string[]
   mediaRotation?: { slot?: string; leadGender?: string; anchorCharacterId?: string; selectionBucket?: string[]; eventId?: string | null }
   flags: { heat: number; clarity: number; publicImpression: number }
@@ -876,9 +877,10 @@ const STARTUP_STAGE_LABELS = [
   '连接比平时稍慢，仍在为你开启…',
 ]
 
-function Landing({ characters, onStart, busy, startError, llmProviders, llmProvider, onLlmProvider }: {
+function Landing({ characters, onStart, onStartCustom, busy, startError, llmProviders, llmProvider, onLlmProvider }: {
   characters: Character[]
   onStart: (mbti: string, perspectiveCharacterId: string) => void
+  onStartCustom: (profile: CustomCharacterProfile) => void
   busy: boolean
   startError?: string
   llmProviders: LlmProvider[]
@@ -886,6 +888,7 @@ function Landing({ characters, onStart, busy, startError, llmProviders, llmProvi
   onLlmProvider: (provider: LlmProvider) => void
 }) {
   const [phase, setPhase] = useState<'intro' | 'mbti' | 'role'>('intro')
+  const [creatorOpen, setCreatorOpen] = useState(false)
   const [selectedMbti, setSelectedMbti] = useState('')
   const [selectedId, setSelectedId] = useState('')
   const [startupStage, setStartupStage] = useState(0)
@@ -930,12 +933,13 @@ function Landing({ characters, onStart, busy, startError, llmProviders, llmProvi
     const timer = window.setTimeout(() => setDeferredBackgroundVideo(backgroundVideo), delay)
     return () => window.clearTimeout(timer)
   }, [backgroundVideo, busy, phase])
-  return (
-    <main className={`landing landing--${phase}`}>
+  const customEntry = <button type="button" className="custom-character-entry" disabled={busy} onClick={() => setCreatorOpen(true)}><span><b>创建我的角色</b><small>上传自己的照片，让你的故事由你登场</small></span><Icon name="arrow-right" size={20} /></button>
+  return <>
+    <main className={`landing landing--${phase}`} hidden={creatorOpen} style={creatorOpen ? { display: 'none' } : undefined}>
       <div className="landing-media" aria-hidden="true">
         {busy && backgroundPoster
           ? <div className="scene-media scene-media--startup-poster"><img className="scene-media__poster" src={backgroundPoster} alt="" /></div>
-          : <SceneMedia src={deferredBackgroundVideo} poster={backgroundPoster} active soundEnabled={false} />}
+          : <SceneMedia src={deferredBackgroundVideo} poster={backgroundPoster} active={!creatorOpen} soundEnabled={false} />}
         <div className="landing-scrim" />
         <div className="sun-glow" />
       </div>
@@ -955,6 +959,7 @@ function Landing({ characters, onStart, busy, startError, llmProviders, llmProvi
           <p>欢迎来到《心动之旅》。八位来自不同生活轨迹的嘉宾，将在海岛酒店一起生活七天六夜。从初次见面、一起做饭，到组队约会和每晚的心动短信，共同生活的衣食住行会碰撞出怎样的火花？让我们一起期待。</p>
           <blockquote>帮助别人，也照见自己。找到一位愿意同行的人，更好地发现自己、爱自己。</blockquote>
           <button className="primary-button start-button" onClick={() => { unlockAudioIntent(); setPhase('mbti') }}><span>先选择你的 MBTI</span><i><Icon name="arrow-right" /></i></button>
+          {customEntry}
         </section>
       </> : phase === 'mbti' ? <>
         <section className="landing-copy landing-copy--selection">
@@ -963,6 +968,7 @@ function Landing({ characters, onStart, busy, startError, llmProviders, llmProvi
           <p className="selection-subtitle">先选择 MBTI，再从对应的一男一女两位角色中确定你的观察视角。</p>
         </section>
         <section className="mbti-step glass-card" aria-label="选择 MBTI">
+          {customEntry}
           <div className="selection-step-heading"><span>本季开放 {availableMbtis.length} 种人格</span><small>每种都有男性与女性角色</small></div>
           <div className="mbti-grid">
             {availableMbtis.map(mbti => {
@@ -1020,10 +1026,12 @@ function Landing({ characters, onStart, busy, startError, llmProviders, llmProvi
             </p>}
           </section> : <div className="role-empty glass-card"><span>选择一位角色</span><p>点击上方的男性或女性角色，先读完人物详情，再决定是否以 TA 的视角开局。</p></div>}
           <button className="selection-back" disabled={busy} onClick={() => { setSelectedId(''); setPhase('mbti') }}><Icon name="arrow-left" size={15} />重新选择 MBTI</button>
+          {customEntry}
         </section>
       </>}
     </main>
-  )
+    <CustomCharacterCreator active={creatorOpen} api={api} initialMbti={selectedMbti} providerLabel={llmProviders.includes(llmProvider) ? LLM_PROVIDER_LABELS[llmProvider] : ''} onBack={() => setCreatorOpen(false)} onStart={profile => { unlockAudioIntent(); onStartCustom(profile) }} starting={busy} startError={startError} />
+  </>
 }
 
 function sceneContext(node: StoryNode, snapshot: Snapshot) {
@@ -1903,7 +1911,8 @@ export default function App() {
           : available.includes(serverChoice) ? serverChoice : available[0] || serverChoice
         setLlmProviders(available)
         setLlmProvider(selectedProvider)
-        setActiveLlmProvider(selectedProvider)
+        if (available.includes(selectedProvider)) setActiveLlmProvider(selectedProvider)
+        else activeLlmProvider = null // No model configured: allow honest profile/engine fallbacks without an invalid explicit header.
         setCharacters(data.characters)
         setView(new URLSearchParams(location.search).get('intro') === '1' ? null : data.view)
       })
@@ -1911,7 +1920,7 @@ export default function App() {
       .finally(() => setLoading(false))
   }, [])
   const cast = useMemo(() => view?.characters || characters, [view, characters])
-  const start = async (mbti: string, perspectiveCharacterId?: string) => {
+  const start = async (mbti: string, perspectiveCharacterId?: string, customCharacterId?: string) => {
     if (startRequestInFlight.current) return
     startRequestInFlight.current = true
     setBusy(true)
@@ -1919,7 +1928,7 @@ export default function App() {
     const controller = new AbortController()
     const timeout = window.setTimeout(() => controller.abort(), 25_000)
     try {
-      setView(await api<View>('/api/runs', { method: 'POST', body: JSON.stringify({ mbti, perspectiveCharacterId }), signal: controller.signal }))
+      setView(await api<View>('/api/runs', { method: 'POST', body: JSON.stringify(customCharacterId ? { mbti, customCharacterId } : { mbti, perspectiveCharacterId }), signal: controller.signal }))
     } catch (error) {
       const requestError = error as Error
       const message = requestError.name === 'AbortError'
@@ -1935,6 +1944,6 @@ export default function App() {
   }
   if (loading) return <Loading />
   if (authError) return <LoginGate message={authError} />
-  if (!view) return <Landing characters={cast} onStart={start} busy={busy} startError={startError} llmProviders={llmProviders} llmProvider={llmProvider} onLlmProvider={chooseLlmProvider} />
-  return <Game view={view} onView={setView} onRestart={() => start(view.snapshot.player.mbti, view.snapshot.player.perspectiveCharacterId)} llmProviders={llmProviders} llmProvider={llmProvider} onLlmProvider={chooseLlmProvider} />
+  if (!view) return <Landing characters={cast} onStart={start} onStartCustom={profile => start(profile.character.mbti, undefined, profile.id)} busy={busy} startError={startError} llmProviders={llmProviders} llmProvider={llmProvider} onLlmProvider={chooseLlmProvider} />
+  return <Game view={view} onView={setView} onRestart={() => start(view.snapshot.player.mbti, view.snapshot.player.perspectiveCharacterId, view.snapshot.player.customCharacterId)} llmProviders={llmProviders} llmProvider={llmProvider} onLlmProvider={chooseLlmProvider} />
 }

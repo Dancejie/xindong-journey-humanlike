@@ -6,6 +6,14 @@
 
 ## 架构
 
+### R11 自定义玩家发布
+
+`4.2.3-custom-player-video-r11` 增加照片/个人资料创建人物、16 MBTI 自选、同原剧情及 NPC 互动、Seedance 2.0 Mini 480p/约10秒动态形象入口。视频可放大完整预览；移除视频卡片祖先的 backdrop-filter，修复内嵌播放器有时间进度但画面全黑。
+
+生产付费生成必须单独在 Render 安全环境变量配置凭据、精确型号、下载域名、单价和累计预算，具体见 `docs/CUSTOM-PLAYER-R11.md`。发布代码不自动启用无限额度，也不复制本地预算。未配置时仍可上传照片、创建人物并游玩，动态视频入口明确提示不可用。
+
+本地个人照片、生成视频、私人人物资料与 API Key 不进入 Git；线上使用独立服务的数据库及访客身份，不自动迁移本地个人存档。
+
 - 前端：`frontend/dist/`，由 FastAPI 同源托管，运行时视频位于 `frontend/dist/media/video/`；R10 Lite 包为 54.99 MiB，并保留全部 165 条视频。Render 构建会显式检查该目录已经随发布提交存在。
 - 剧情与记忆：PostgreSQL 保存每位访客的剧情快照、角色独立记忆、七轴关系、专属事件、心动短信，以及包含人物、时间、地点和频道的对话历史。
 - 角色 Agent：后端通过同一供应商适配层调用 DeepSeek 或 Dots Chat Completions API；进程默认由 `LLM_PROVIDER` 选择，也可由单次请求的 `X-LLM-Provider` 切换。两种模型共用人物卡、Prompt、输出校验与状态提交合同。

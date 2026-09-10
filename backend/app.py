@@ -44,6 +44,7 @@ from backend.game_content import (
     migrate_snapshot,
     normalize_conversation_context,
     project_view,
+    player_card_for,
     validate_agent_turn,
 )
 from backend.llm_provider import (
@@ -61,6 +62,7 @@ from backend.story_director import (
     resolve_story_mission,
     validate_story_director_output,
 )
+from backend.custom_api import make_custom_router, load_custom, hydrate_custom_snapshot
 
 ROOT = Path(__file__).resolve().parent
 FRONTEND_DIST = ROOT.parent / "frontend" / "dist"
@@ -192,6 +194,7 @@ def _load_run(conn: psycopg.Connection, run_id: str, owner_id: str, for_update: 
         raise HTTPException(status_code=404, detail="没有找到这段心动旅程")
     snapshot = row["snapshot"]
     raw = json.loads(snapshot) if isinstance(snapshot, str) else snapshot
+    raw = hydrate_custom_snapshot(conn, raw, owner_id)
     migrated = migrate_snapshot(raw)
     assert migrated is not None
     return migrated
@@ -219,7 +222,7 @@ async def _agent_turn(
     provider: str | None = None,
 ) -> tuple[dict, dict[str, str]]:
     card = CHARACTER_CARD_MAP[character["id"]]
-    player_card = CHARACTER_CARD_MAP[snapshot["player"]["perspectiveCharacterId"]]
+    player_card = player_card_for(snapshot)
     messages = build_agent_messages(card, snapshot, message, player_card, conversation_context)
     payload: dict | None = None
     for attempt in range(2):
@@ -263,7 +266,7 @@ async def _generate_day1_node_script(
             return {"node": normalized}, generator
         except Exception as error:
             if attempt == 0:
-                protagonist_name = CHARACTER_MAP[snapshot["player"]["perspectiveCharacterId"]]["name"]
+                protagonist_name = player_card_for(snapshot)["names"]["primary"]
                 messages = [*messages, {"role": "user", "content": (
                     f"上一稿未通过当前节点合同：{error}。保持人物卡和固定 choice id，只重写完整 node JSON。"
                     f"身份再次确认：玩家就是{protagonist_name}，‘你’就是{protagonist_name}，场内没有第二个{protagonist_name}，不得让{protagonist_name}作为NPC对你行动或说话。"
@@ -295,7 +298,7 @@ async def _generate_day1_script(snapshot: dict, provider: str | None = None) -> 
 async def _chat_opening(
     card: dict, snapshot: dict, provider: str | None = None,
 ) -> tuple[dict, dict[str, str] | None]:
-    player_card = CHARACTER_CARD_MAP[snapshot["player"]["perspectiveCharacterId"]]
+    player_card = player_card_for(snapshot)
     fallback = fallback_chat_opening(card, snapshot, player_card)
     config = provider_config(provider, require_configured=False)
     if not config.configured:
@@ -339,6 +342,7 @@ async def _story_director_turn(
 
 
 app = FastAPI(title="心动之旅：MBTI恋综模拟器")
+app.include_router(make_custom_router(_get_db_conn, _require_user, _request_provider, _llm_text))
 
 
 @app.middleware("http")
@@ -346,7 +350,10 @@ async def _runtime_cache_headers(request: Request, call_next):
     """Keep repeat visits light while preserving byte-range video responses."""
     response = await call_next(request)
     path = request.url.path
-    if path.startswith("/assets/"):
+    if path.startswith("/api/custom-"):
+        response.headers["Cache-Control"] = "private, no-store"
+        response.headers["Referrer-Policy"] = "no-referrer"
+    elif path.startswith("/assets/"):
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
     elif path.startswith("/media/"):
         response.headers["Cache-Control"] = "public, max-age=604800, stale-while-revalidate=2592000"
@@ -401,7 +408,7 @@ def bootstrap(decrypted_userinfo: Optional[str] = Header(None, alias="Decrypted-
         row = conn.execute(
             "SELECT snapshot FROM game_runs WHERE owner_id = %s ORDER BY updated_at DESC LIMIT 1", (user["userId"],)
         ).fetchone()
-    snapshot = row["snapshot"] if row else None
+        snapshot = hydrate_custom_snapshot(conn, row["snapshot"] if row else None, user["userId"])
     if isinstance(snapshot, str):
         snapshot = json.loads(snapshot)
     snapshot = migrate_snapshot(snapshot)
@@ -421,11 +428,17 @@ async def start_run(body: dict, decrypted_userinfo: Optional[str] = Header(None,
     if mbti not in valid:
         raise HTTPException(status_code=400, detail="请选择有效的 MBTI")
     perspective_character_id = str(body.get("perspectiveCharacterId") or "").strip()
-    if perspective_character_id not in CHARACTER_MAP:
+    custom_id = str(body.get("customCharacterId") or "").strip()
+    custom_card = None
+    if custom_id:
+        with _get_db_conn() as conn:
+            custom_card = load_custom(conn, custom_id, user["userId"])["card"]
+        perspective_character_id = custom_card["id"]
+    if not custom_card and perspective_character_id not in CHARACTER_MAP:
         raise HTTPException(status_code=400, detail="请选择一位有效的观察人物")
-    if CHARACTER_MAP[perspective_character_id]["mbti"] != mbti:
+    if (custom_card or CHARACTER_MAP[perspective_character_id])["mbti"] != mbti:
         raise HTTPException(status_code=400, detail="所选 MBTI 与观察人物不一致，请先选 MBTI 再选对应角色")
-    snapshot = create_snapshot(mbti, perspective_character_id)
+    snapshot = create_snapshot(mbti, perspective_character_id, custom_player_card=custom_card) if custom_card else create_snapshot(mbti, perspective_character_id)
     snapshot = await _generate_day1_script(snapshot, selected_provider)
     with _get_db_conn() as conn:
         conn.execute(

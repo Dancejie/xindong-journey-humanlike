@@ -60,6 +60,34 @@ CREATE TABLE IF NOT EXISTS agent_memories (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_agent_memories_owner_character ON agent_memories(owner_id, character_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS custom_characters (
+    id TEXT PRIMARY KEY,
+    owner_id TEXT NOT NULL REFERENCES app_users(id),
+    profile JSONB NOT NULL,
+    request_key TEXT NOT NULL,
+    card JSONB NOT NULL,
+    photo BYTEA NOT NULL,
+    photo_token TEXT NOT NULL UNIQUE,
+    photo_sha256 TEXT NOT NULL,
+    video BYTEA,
+    video_token TEXT UNIQUE,
+    video_status TEXT NOT NULL DEFAULT 'planned',
+    video_job JSONB NOT NULL DEFAULT '{}',
+    video_error TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_custom_characters_owner ON custom_characters(owner_id, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_character_request ON custom_characters(owner_id, request_key);
+-- Cost reservations survive deleting a profile, so erasure cannot bypass the cap.
+-- No personal data, reference URL, photo or prompt belongs in this ledger.
+CREATE TABLE IF NOT EXISTS custom_video_budget_jobs (
+    id UUID PRIMARY KEY,
+    character_id TEXT NOT NULL UNIQUE,
+    reserved_cny NUMERIC(12,4) NOT NULL CHECK (reserved_cny > 0),
+    status TEXT NOT NULL DEFAULT 'reserved',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 """
 
 
