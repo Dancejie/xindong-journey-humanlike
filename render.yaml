@@ -36,6 +36,6 @@ services:
       - key: DB_SCHEMA
         value: xindong_journey_humanlike
       - key: DATABASE_URL
-        fromDatabase:
-          name: xindong-journey-db
-          property: connectionString
+        # Use the verified external PostgreSQL connection stored in Render.
+        # Do not bind this secret back to the expiring Render free database.
+        sync: false
