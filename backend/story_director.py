@@ -9,6 +9,9 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from backend.localization import character_name, localize
+from backend.language_support import ENGLISH_DIRECTOR_SYSTEM, english_surface_checks, is_english, require_english
+
 from backend.game_content import (
     CHARACTER_CARD_MAP,
     CHARACTER_MAP,
@@ -338,27 +341,43 @@ bridgeText 要清楚交代：什么刚发生、谁被卷入、玩家现在必须
         "recentStoryEvents": state["storyEventLedger"][-6:], "candidates": prompt_candidates,
     }
     prompt = "当前已提交状态：\n" + json.dumps(context, ensure_ascii=False) + "\n\n输出合同：\n" + json.dumps(schema, ensure_ascii=False)
+    if is_english(state):
+        schema.update({
+            "bridgeTitle": "4-90 English characters",
+            "bridgeText": "20-650 English characters of committed facts, scene changes and pressure",
+            "reversalBeat": "12-500 English characters grounded in candidate hooks or behavioral evidence",
+            "characterInsight": "12-360 English characters of new understanding without diagnosing personality",
+            "availableStrategies": "2-3 strings, each 8-160 English characters, within the candidate mission boundaries",
+            "playerMissionPrompt": "12-360 English characters: one achievable, refusable player action with the declared deadline",
+            "publicReason": "At most 140 English characters, no private scores or memories",
+        })
+        prompt = json.dumps({"context": localize(context, "en"), "contract": schema}, ensure_ascii=False)
+        return [{"role": "system", "content": ENGLISH_DIRECTOR_SYSTEM}, {"role": "user", "content": prompt}]
     return [{"role": "system", "content": system}, {"role": "user", "content": prompt}]
 
 
 @with_player_card
 def validate_story_director_output(snapshot: dict[str, Any], candidates: list[dict[str, Any]], payload: dict[str, Any]) -> dict[str, Any]:
     state = ensure_story_state(snapshot)
+    english = is_english(state)
     decision = str(payload.get("decision") or "").strip()
     if decision not in DECISIONS:
         raise ValueError("剧情导演返回了未知决策")
     if decision == "wait":
         if len(candidates) == 1 and len(state["echoMemories"]) >= 4:
             raise ValueError("单一候选已经有足够已提交记忆，剧情导演必须激活而不是等待")
-        prompt = str(payload.get("playerMissionPrompt") or "再完成一次能留下行为证据的交流。 ").strip()[:100]
+        prompt = str(payload.get("playerMissionPrompt") or ("Have one more conversation that leaves concrete evidence." if english else "再完成一次能留下行为证据的交流。 ")).strip()[:360 if english else 100]
         if len(prompt) < 8:
             raise ValueError("等待决策缺少可执行提示")
+        if english:
+            require_english(prompt + str(payload.get("bridgeTitle") or "") + str(payload.get("bridgeText") or "") + str(payload.get("publicReason") or ""))
+            english_surface_checks(prompt)
         return {
             "decision": "wait", "proposedEventId": None, "participantIds": [],
-            "bridgeTitle": str(payload.get("bridgeTitle") or "信号还不足").strip()[:26],
-            "bridgeText": str(payload.get("bridgeText") or "现在还没有足够的行为证据激活新事件。").strip()[:160],
+            "bridgeTitle": str(payload.get("bridgeTitle") or ("More evidence needed" if english else "信号还不足")).strip()[:90 if english else 26],
+            "bridgeText": str(payload.get("bridgeText") or ("There is not enough behavioral evidence to activate a new event yet." if english else "现在还没有足够的行为证据激活新事件。")).strip()[:650 if english else 160],
             "sceneSetup": "", "reversalBeat": "", "characterInsight": "", "visualCue": "", "availableStrategies": [],
-            "playerMissionPrompt": prompt, "publicReason": str(payload.get("publicReason") or "需要更多具体行动").strip()[:40],
+            "playerMissionPrompt": prompt, "publicReason": str(payload.get("publicReason") or ("More concrete action is needed" if english else "需要更多具体行动")).strip()[:140 if english else 40],
             "urgency": str(payload.get("urgency") or "low") if str(payload.get("urgency") or "low") in URGENCIES else "low",
             "memoryCallbackIds": [],
         }
@@ -379,29 +398,44 @@ def validate_story_director_output(snapshot: dict[str, Any], candidates: list[di
     bridge_text = str(payload.get("bridgeText") or "").strip()
     mission_prompt = str(payload.get("playerMissionPrompt") or "").strip()
     scene_setup = f"{event['title']}。{event['dramaticQuestion']} 当前任务：{event['playerMission']['objective']} 截止：{event['playerMission']['deadline']}"
+    if english:
+        scene_setup = f"{localize(event['title'], 'en')}. {localize(event['dramaticQuestion'], 'en')} Your task: {localize(event['playerMission']['objective'], 'en')} Deadline: {localize(event['playerMission']['deadline'], 'en')}"
     reversal_beat = str(payload.get("reversalBeat") or "").strip()
     character_insight = str(payload.get("characterInsight") or "").strip()
-    visual_cue = str(event.get("mediaPlan", {}).get("cue") or event["beats"][0]).strip()
+    visual_cue = str(localize(event.get("mediaPlan", {}).get("cue") or event["beats"][0], "en" if english else "zh-CN")).strip()
     strategies = payload.get("availableStrategies") or []
-    if not 4 <= len(bridge_title) <= 26:
+    if not 4 <= len(bridge_title) <= (90 if english else 26):
         raise ValueError("剧情标题长度不符合合同")
-    if not 20 <= len(bridge_text) <= 160:
+    if not 20 <= len(bridge_text) <= (650 if english else 160):
         raise ValueError("剧情桥段长度不符合合同")
-    if not 12 <= len(mission_prompt) <= 100:
+    if not 12 <= len(mission_prompt) <= (360 if english else 100):
         raise ValueError("主任务提示长度不符合合同")
-    if not 12 <= len(reversal_beat) <= 140:
+    if not 12 <= len(reversal_beat) <= (500 if english else 140):
         raise ValueError("反差桥段长度不符合合同")
-    if not 12 <= len(character_insight) <= 100:
+    if not 12 <= len(character_insight) <= (360 if english else 100):
         raise ValueError("人物新理解长度不符合合同")
     if not isinstance(strategies, list) or not 2 <= len(strategies) <= 3:
         raise ValueError("可选策略必须是2到3项")
     strategies = [str(item).strip() for item in strategies]
-    if any(not 8 <= len(item) <= 40 for item in strategies):
+    if any(not 8 <= len(item) <= (160 if english else 40) for item in strategies):
         raise ValueError("单项策略长度不符合合同")
-    participant_names = {CHARACTER_MAP[character_id]["name"] for character_id in participants}
-    other_names = {CHARACTER_MAP[character_id]["name"] for character_id in active_cast_ids(state)} - participant_names
+    participant_names = {character_name(CHARACTER_MAP[character_id], "en" if english else "zh-CN") for character_id in participants}
+    other_names = {character_name(CHARACTER_MAP[character_id], "en" if english else "zh-CN") for character_id in active_cast_ids(state)} - participant_names
     generated_scene_text = bridge_text + mission_prompt + scene_setup + reversal_beat + character_insight + visual_cue + "".join(strategies)
     allowed_contract_text = json.dumps(event, ensure_ascii=False) + json.dumps(state.get("storyEventLedger", []), ensure_ascii=False)
+    if english:
+        authored = json.dumps(localize(event, "en"), ensure_ascii=False) + json.dumps(state.get("storyEventLedger", []), ensure_ascii=False)
+        generated_only = " ".join((bridge_title, bridge_text, mission_prompt, reversal_beat, character_insight, *strategies))
+        require_english(generated_only, names=tuple(CHARACTER_MAP[cid]["name"] for cid in participants))
+        english_surface_checks(generated_only, authored)
+        for detail in ("Wednesday", "Friday", "ink mark", "notebook", "mountain trail", "lighthouse", "countdown digits", "route card", "six o'clock", "shell", "last bus", "corridor", "sleeve", "wrist"):
+            if re.search(r"\b" + re.escape(detail) + r"s?\b", generated_only, re.I) and detail.lower() not in authored.lower():
+                raise ValueError(f"Story bridge invents an undeclared scene detail: {detail}")
+        if re.search(r"\b(?:childhood trauma|PTSD|depression diagnosis|anxiety disorder|worthless|useless (?:man|woman)|forced (?:hug|kiss)|butler|host|waiter|staff member)\b", generated_only, re.I):
+            raise ValueError("Story bridge invents diagnoses, demeaning labels, nonconsensual contact or undeclared staff")
+        for phrase, required_event in {"goodbye letter": "story.final.unsent-letter", "unsent letter": "story.final.unsent-letter", "anonymous letter": "story.signal.first-anonymous-message", "ninth guest": "story.bombshell.ninth-card", "ex-partner": "story.past.consent-reveal"}.items():
+            if phrase in bridge_text.lower() and event_id != required_event and not any(item.get("eventId") == required_event and item.get("status") == "completed" for item in state["storyEventLedger"]):
+                raise ValueError("Story bridge refers to an event that has not happened")
     guarded_scene_details = ("周三", "周五", "墨痕", "记录本", "山径", "灯塔", "小灯", "倒计时数字", "路线卡", "明早", "六点", "告别信", "贝壳", "末班车", "收工后", "走廊", "袖口", "手腕")
     invented_scene_details = [term for term in guarded_scene_details if term in generated_scene_text and term not in allowed_contract_text]
     if invented_scene_details:
@@ -433,7 +467,7 @@ def validate_story_director_output(snapshot: dict[str, Any], candidates: list[di
     if invented_clock_times:
         raise ValueError(f"剧情桥段编造了事件合同外的时间：{'、'.join(invented_clock_times)}")
     if event_id == "story.final.unsent-letter":
-        if not re.search(r"你.{0,24}写", bridge_text):
+        if not (re.search(r"\byou\b.{0,45}\bwrite\b", bridge_text, re.I) if english else re.search(r"你.{0,24}写", bridge_text)):
             raise ValueError("剧情桥段没有保持由玩家完成写信任务的行动主体")
         subject_pattern = "|".join([*(re.escape(name) for name in participant_names), "她", "他"])
         if re.search(fr"(?:{subject_pattern}).{{0,30}}(?:写下|写一封|写了)", bridge_text):
@@ -442,6 +476,14 @@ def validate_story_director_output(snapshot: dict[str, Any], candidates: list[di
             raise ValueError("剧情桥段提前写入了尚未发生的信件内容")
         if any(term in bridge_text + mission_prompt for term in ("替她写", "替他写", "代她写", "代他写")):
             raise ValueError("剧情桥段要求玩家代替角色写信")
+        if english and (re.search(r"\b(?:has|have|just|already) written\b|\bwrite (?:her|his|their) letter\b|\bwrite (?:for|on behalf of)\b", bridge_text + mission_prompt, re.I) or any(re.search(re.escape(name) + r".{0,35}\b(?:writes|has written)\b", bridge_text, re.I) for name in participant_names)):
+            raise ValueError("The unsent letter must remain an uncompleted player action")
+    if english and event_id == "story.triangle.reverse-invite" and re.search(r"\b(?:tomorrow morning|tomorrow evening|morning|afternoon|tonight|priority|hidden condition|gold lettering)\b", generated_only, re.I):
+        raise ValueError("Invitation bridge changes the conflicting schedule or invents card details")
+    if english and event_id == "story.kitchen.two-person-shift" and re.search(r"\b(?:timer|apron|live animal|prepare fish)\b", generated_only, re.I):
+        raise ValueError("Kitchen bridge invents ingredients or props outside its contract")
+    if english and event_id == "story.trip.last-two-days" and re.search(r"\b(?:last bus|forty minutes|leave after sunset)\b", generated_only, re.I):
+        raise ValueError("Trip bridge invents transport or time restrictions")
     if event_id == "story.triangle.reverse-invite" and any(term in generated_scene_text for term in ("明天晨", "明早", "明晚", "上午", "下午", "早上", "晚上")):
         raise ValueError("双邀约桥段编造了互不冲突的时间，破坏同档期单选前提")
     if event_id == "story.triangle.reverse-invite" and any(term in generated_scene_text for term in ("体能竞技", "隐藏条件", "优先权", "烫金")):
@@ -450,7 +492,7 @@ def validate_story_director_output(snapshot: dict[str, Any], candidates: list[di
         raise ValueError("厨房桥段编造了任务合同外的食材或道具")
     if event_id == "story.trip.last-two-days" and any(term in generated_scene_text for term in ("末班车", "四十分钟", "日落后离开")):
         raise ValueError("旅行桥段编造了任务合同外的交通或时间限制")
-    public_reason = str(payload.get("publicReason") or "关系证据触发新任务").strip()[:40]
+    public_reason = str(payload.get("publicReason") or ("Your interactions open a new task" if english else "关系证据触发新任务")).strip()[:140 if english else 40]
     if any(term in bridge_text + mission_prompt + public_reason for term in ("把话来", "来清楚")):
         raise ValueError("剧情文案存在明显病句")
     if any(term in public_reason for term in ("忠诚", "坚定度", "真心程度")):

@@ -1,3 +1,5 @@
+import { t, gameLanguage, genderLabel, isEnglish } from './i18n'
+import { LanguageSwitch } from './LanguageSwitch'
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from './ui/Icon'
 import { CustomCharacterCreator, CustomCharacterProfile } from './CustomCharacterCreator'
@@ -175,21 +177,21 @@ function setActiveLlmProvider(provider: LlmProvider) {
 }
 
 const PROGRESS: Record<string, number> = { 'arrival-context': 6, 'villa-arrival': 18, introductions: 32, 'cast-first-impressions': 41, 'icebreaker-choice': 49, 'guided-chat': 62, 'team-up': 76, 'anonymous-letter': 89, callback: 100, arrival: 8, 'first-look': 26, 'private-window': 48, 'event-reveal': 68 }
-const ATTITUDE_LABELS: Record<string, string> = { warm: '温暖', curious: '好奇', guarded: '戒备', challenging: '试探', vulnerable: '袒露', softened: '松动', uncertain: '迟疑', honest: '坦诚', moved: '被触动', careful: '谨慎', steady: '稳定', boundary: '边界' }
-const AXIS_LABELS: Record<string, string> = { trust: '信任', affection: '好感', respect: '尊重', fear: '压力', debt: '亏欠', attraction: '吸引', resentment: '芥蒂' }
+const ATTITUDE_LABELS: Record<string, string> = { warm: t("温暖"), curious: t("好奇"), guarded: t("戒备"), challenging: t("试探"), vulnerable: t("袒露"), softened: t("松动"), uncertain: t("迟疑"), honest: t("坦诚"), moved: t("被触动"), careful: t("谨慎"), steady: t("稳定"), boundary: t("边界") }
+const AXIS_LABELS: Record<string, string> = { trust: t("信任"), affection: t("好感"), respect: t("尊重"), fear: t("压力"), debt: t("亏欠"), attraction: t("吸引"), resentment: t("芥蒂") }
 
 // Keep the currently published public card shape forward-compatible with the
 // richer Day 1 cast payload. Two source cards intentionally do not disclose a
 // confirmed occupation yet; the UI says so instead of inventing one.
 const PUBLIC_OCCUPATION_FALLBACK: Record<string, string> = {
-  shenmo: '投行 VP',
-  linyu: '建筑工程师',
-  chengye: '极限运动品牌创始人',
-  guyan: '游戏策划',
-  jiangwan: '心理咨询师',
-  jiangmi: '职业待公开',
-  sunnian: '插画师',
-  chensu: '职业待公开',
+  shenmo: t("投行 VP"),
+  linyu: t("建筑工程师"),
+  chengye: t("极限运动品牌创始人"),
+  guyan: t("游戏策划"),
+  jiangwan: t("心理咨询师"),
+  jiangmi: t("职业待公开"),
+  sunnian: t("插画师"),
+  chensu: t("职业待公开"),
 }
 
 function identityId(identity: Character | SceneIdentityCard) {
@@ -200,7 +202,7 @@ function publicOccupation(identity: Character | SceneIdentityCard) {
   const id = identityId(identity)
   const publicFacts = 'publicFacts' in identity ? identity.publicFacts : undefined
   const occupation = identity.occupation || publicFacts?.occupation || (id ? PUBLIC_OCCUPATION_FALLBACK[id] : undefined)
-  if (!occupation || /待剧情|待正式确认|运行时职业待|原稿为/.test(occupation)) return '职业待公开'
+  if (!occupation || /待剧情|待正式确认|运行时职业待|原稿为/.test(occupation)) return t("职业待公开")
   return occupation
 }
 
@@ -256,14 +258,14 @@ const EVENT_MEDIA: Record<string, SceneMediaAsset> = {
 }
 
 const FALLBACK_OPENERS: Record<string, { stageDirection: string; line: string }> = {
-  shenmo: { stageDirection: '沈墨把座位卡向旁边挪了一点，给你留出空位。', line: '你好，我是沈墨。刚才大家介绍得都很快，我可能比较容易记住细节。你进门后最先注意到了什么？' },
-  linyu: { stageDirection: '林屿给你倒了半杯温水，才在对面坐下。', line: '你好，我是林屿。先喝口水吧，一路过来应该挺累的。你现在还紧张吗？' },
-  chengye: { stageDirection: '程野靠住椅背，笑着把镜头外的空位指给你。', line: '程野。刚才镜头太多，都没来得及好好打招呼。先不谈任务——这间小屋里，你最想去哪里看看？' },
-  guyan: { stageDirection: '顾言放下手里的机械锁，像是在认真组织第一句话。', line: '你好，我是顾言。自我介绍这件事我不太擅长，不过我会认真听。你希望别人先认识你的哪一面？' },
-  jiangwan: { stageDirection: '江晚合上写到一半的信纸，抬眼看向你。', line: '你好，我是江晚。刚才人多，很多话只来得及说一半。现在只有我们，你想从哪件小事开始聊？' },
-  jiangmi: { stageDirection: '姜米把录音笔按下暂停，朝你晃了晃手。', line: '我是姜米。这里的海风比我想象中还大，但好像也比想象中更容易让人开口。你刚到小屋的第一感觉是什么？' },
-  sunnian: { stageDirection: '苏念把果盘往你面前推了推，确认你坐得舒服才开口。', line: '你好，我是苏念。刚才一直在忙，都忘了问你有没有吃好。第一天还习惯吗？' },
-  chensu: { stageDirection: '陈叙确认旧相机放稳了，拉开旁边的椅子。', line: '陈叙。刚把东西放好。你要是不介意，先坐会儿——刚来这里，还习惯吗？' },
+  shenmo: { stageDirection: t("沈墨把座位卡向旁边挪了一点，给你留出空位。"), line: t("你好，我是沈墨。刚才大家介绍得都很快，我可能比较容易记住细节。你进门后最先注意到了什么？") },
+  linyu: { stageDirection: t("林屿给你倒了半杯温水，才在对面坐下。"), line: t("你好，我是林屿。先喝口水吧，一路过来应该挺累的。你现在还紧张吗？") },
+  chengye: { stageDirection: t("程野靠住椅背，笑着把镜头外的空位指给你。"), line: t("程野。刚才镜头太多，都没来得及好好打招呼。先不谈任务——这间小屋里，你最想去哪里看看？") },
+  guyan: { stageDirection: t("顾言放下手里的机械锁，像是在认真组织第一句话。"), line: t("你好，我是顾言。自我介绍这件事我不太擅长，不过我会认真听。你希望别人先认识你的哪一面？") },
+  jiangwan: { stageDirection: t("江晚合上写到一半的信纸，抬眼看向你。"), line: t("你好，我是江晚。刚才人多，很多话只来得及说一半。现在只有我们，你想从哪件小事开始聊？") },
+  jiangmi: { stageDirection: t("姜米把录音笔按下暂停，朝你晃了晃手。"), line: t("我是姜米。这里的海风比我想象中还大，但好像也比想象中更容易让人开口。你刚到小屋的第一感觉是什么？") },
+  sunnian: { stageDirection: t("苏念把果盘往你面前推了推，确认你坐得舒服才开口。"), line: t("你好，我是苏念。刚才一直在忙，都忘了问你有没有吃好。第一天还习惯吗？") },
+  chensu: { stageDirection: t("陈叙确认旧相机放稳了，拉开旁边的椅子。"), line: t("陈叙。刚把东西放好。你要是不介意，先坐会儿——刚来这里，还习惯吗？") },
 }
 
 function getClientId() {
@@ -287,6 +289,7 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
       headers: {
         'Content-Type': 'application/json',
         'X-Client-Id': getClientId(),
+        'X-Game-Language': gameLanguage,
         ...(activeLlmProvider ? { 'X-LLM-Provider': activeLlmProvider } : {}),
         ...(options?.headers || {}),
       },
@@ -296,15 +299,15 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
     if (requestError.name === 'AbortError') throw requestError
     let serviceRecovered = false
     try {
-      const health = await fetch('/health', { cache: 'no-store' })
+      const health = await fetch('/health', { cache: 'no-store', headers: { 'X-Game-Language': gameLanguage } })
       serviceRecovered = health.ok
     } catch { /* The service is still unreachable; the message below explains what happened. */ }
     throw new Error(serviceRecovered
-      ? '刚才与后端的连接中断；服务现已恢复，请重试一次。这不是模型生成失败。'
-      : '当前无法连接后端服务，请稍后重试或重新开启本地预览。这不是模型返回的内容错误。')
+      ? t("刚才与后端的连接中断；服务现已恢复，请重试一次。这不是模型生成失败。")
+      : t("当前无法连接后端服务，请稍后重试或重新开启本地预览。这不是模型返回的内容错误。"))
   }
   const payload = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(payload.detail || '心动信号暂时中断，请稍后重试')
+  if (!response.ok) throw new Error(payload.detail || t("心动信号暂时中断，请稍后重试"))
   return payload
 }
 
@@ -316,10 +319,10 @@ function LlmProviderSwitch({ available, value, onChange, disabled = false }: {
 }) {
   if (available.length < 2) return null
   return (
-    <label className="llm-provider-control" title="只影响下一次生成；已提交的剧情和记忆不会被改写">
-      <span>台词模型</span>
+    <label className="llm-provider-control" title={t("只影响下一次生成；已提交的剧情和记忆不会被改写")}>
+      <span>{t("台词模型")}</span>
       <select
-        aria-label="切换台词与剧情生成模型"
+        aria-label={t("切换台词与剧情生成模型")}
         value={value}
         disabled={disabled}
         onChange={event => {
@@ -384,56 +387,58 @@ function suggestionKind(value?: string): SuggestionKind {
 function normalizeSuggestion(input: ChatSuggestionInput, fallbackKind: SuggestionKind = 'followup'): SuggestedPrompt | null {
   if (typeof input === 'string') {
     const text = input.trim()
-    return text ? { text, kind: fallbackKind, label: fallbackKind === 'mainline' ? '推进剧情' : fallbackKind === 'deeper' ? '深入了解' : '接着聊' } : null
+    return text ? { text, kind: fallbackKind, label: fallbackKind === 'mainline' ? t("推进剧情") : fallbackKind === 'deeper' ? t("深入了解") : t("接着聊") } : null
   }
   const text = (input.text || input.prompt || input.value || input.message || input.content || input.label || '').trim()
   if (!text) return null
   const declaredKind = input.type || input.kind || input.category || input.suggestionType || input.intent
   const kind = declaredKind ? suggestionKind(declaredKind) : fallbackKind
-  const standardLabel = kind === 'mainline' ? '推进剧情' : kind === 'deeper' ? '深入了解' : '接着聊'
+  const standardLabel = kind === 'mainline' ? t("推进剧情") : kind === 'deeper' ? t("深入了解") : t("接着聊")
   const label = input.displayLabel || (input.label && input.label !== text ? input.label : standardLabel)
   return { text, kind, label }
 }
 
 function firstMeetingFallback(perspective?: Character) {
-  const name = perspective?.name || '新来的嘉宾'
-  const identity = perspective?.mbti ? `${name}，${perspective.mbti}` : name
+  const name = perspective?.name || t("新来的嘉宾")
+  const identity = perspective?.mbti ? `${name}${isEnglish ? ', ' : '，'}${perspective.mbti}` : name
   const femaleLines: Record<string, string> = {
-    jiangwan: `你好，我是${identity}。刚才人多，现在我想先好好听你说一句自己的事。`,
-    jiangmi: `嗨，我是${identity}。刚才人多，现在终于能补一句正式的你好了。`,
-    sunnian: `你好，我是${identity}。刚才一直顾着认人，现在总算能坐下来聊两句了。`,
-    luyao: `你好，我是${identity}。刚才没聊上，现在从一句正式的你好开始。`,
-    yecheng: `你好，我是${identity}。刚才人多，有些话没听清，现在想认真认识你。`,
-    tangli: `嗨，我是${identity}。刚才人多没聊上，现在补个正式的你好。`,
-    wenxu: `你好，我是${identity}。刚才在心里排练了一遍，现在直接来认识你。`,
-    qiaolan: `你好，我是${identity}。刚才没聊上，现在补一句你好。`,
+    jiangwan: t("你好，我是{0}。刚才人多，现在我想先好好听你说一句自己的事。", identity),
+    jiangmi: t("嗨，我是{0}。刚才人多，现在终于能补一句正式的你好了。", identity),
+    sunnian: t("你好，我是{0}。刚才一直顾着认人，现在总算能坐下来聊两句了。", identity),
+    luyao: t("你好，我是{0}。刚才没聊上，现在从一句正式的你好开始。", identity),
+    yecheng: t("你好，我是{0}。刚才人多，有些话没听清，现在想认真认识你。", identity),
+    tangli: t("嗨，我是{0}。刚才人多没聊上，现在补个正式的你好。", identity),
+    wenxu: t("你好，我是{0}。刚才在心里排练了一遍，现在直接来认识你。", identity),
+    qiaolan: t("你好，我是{0}。刚才没聊上，现在补一句你好。", identity),
   }
-  return femaleLines[perspective?.id || ''] || `你好，我是${identity}。刚才人多，没来得及好好认识你。`
+  return femaleLines[perspective?.id || ''] || t("你好，我是{0}。刚才人多，没来得及好好认识你。", identity)
 }
 
 function fallbackPrompts(character: Character, perspective: Character | undefined, memories: Memory[], phase: Snapshot['storyArc']['phase'], nodeId: string): ChatSuggestionInput[] {
   if (!memories.length) return [
-    { text: firstMeetingFallback(perspective), type: 'followup', displayLabel: '先打招呼' },
-    { text: '第一次来这种节目，你现在紧张吗？', type: 'deeper' },
-    { text: nodeId === 'guided-chat' ? '节目组让我们记住对方一件真实的小事。你最希望我先记住什么？' : '你为什么会来《心动之旅》？', type: 'mainline' },
+    { text: firstMeetingFallback(perspective), type: 'followup', displayLabel: t("先打招呼") },
+    { text: t("第一次来这种节目，你现在紧张吗？"), type: 'deeper' },
+    { text: nodeId === 'guided-chat' ? t("节目组让我们记住对方一件真实的小事。你最希望我先记住什么？") : t("你为什么会来《心动之旅》？"), type: 'mainline' },
   ]
   const latest = memories[memories.length - 1]
   if (memories.length === 1 || phase === 'early') return [
-    { text: `你还记得我刚才说的“${latest.playerText.slice(0, 24)}”吗？`, type: 'followup', displayLabel: '回忆回声' },
-    { text: '和刚见面时比，你现在对我有什么新印象？', type: 'deeper' },
-    { text: nodeId === 'guided-chat' ? '接下来的组队，你最想先从哪件事开始？' : (character.quickPrompts[0] || '你愿意和我一起试试下一个任务吗？'), type: 'mainline' },
+    { text: t("你还记得我刚才说的“{0}”吗？", latest.playerText.slice(0, 24)), type: 'followup', displayLabel: t("回忆回声") },
+    { text: t("和刚见面时比，你现在对我有什么新印象？"), type: 'deeper' },
+    { text: nodeId === 'guided-chat' ? t("接下来的组队，你最想先从哪件事开始？") : (character.quickPrompts[0] || t("你愿意和我一起试试下一个任务吗？")), type: 'mainline' },
   ]
   return [
-    { text: `上次聊到“${(latest.summary || latest.playerText).slice(0, 22)}”，你后来还想过吗？`, type: 'followup', displayLabel: '回忆回声' },
-    { text: character.quickPrompts[0] || '这次你想让我多了解你的哪一面？', type: 'deeper' },
-    { text: '如果下一次任务要两个人一起做，你愿意和我试试吗？', type: 'mainline' },
+    { text: t("上次聊到“{0}”，你后来还想过吗？", (latest.summary || latest.playerText).slice(0, 22)), type: 'followup', displayLabel: t("回忆回声") },
+    { text: character.quickPrompts[0] || t("这次你想让我多了解你的哪一面？"), type: 'deeper' },
+    { text: t("如果下一次任务要两个人一起做，你愿意和我试试吗？"), type: 'mainline' },
   ]
 }
 
 function promptKeepsPlayerIdentity(prompt: string, perspective?: Character) {
   if (!perspective) return true
   const selfIntroduction = prompt.match(/(?:你好[，,。！!\s]*)?我(?:叫|是)\s*([\p{Script=Han}]{2,4})(?=[，,。！!\s]|$)/u)
-  return !selfIntroduction || selfIntroduction[1] === perspective.name
+  const englishIntroduction = prompt.match(/\b(?:I['’]m|I am|my name is)\s+([^,.!?]+)(?=[,.!?]|$)/i)
+  const introducedName = selfIntroduction?.[1] || englishIntroduction?.[1]?.trim()
+  return !introducedName || introducedName === perspective.name
 }
 
 function selectSuggestedPrompts(inputs: ChatSuggestionInput[], perspective: Character | undefined, firstGreeting?: SuggestedPrompt) {
@@ -685,7 +690,7 @@ function useEventPlayback(videoRef: React.RefObject<HTMLVideoElement>, src: stri
     needsGesture,
     toggleSound,
     handleEnded,
-    soundLabel: needsGesture ? '点此开启声音' : muted ? (phase === 'loop' ? '循环已静音' : '声音已关闭') : '声音已开启',
+    soundLabel: needsGesture ? t("点此开启声音") : muted ? (phase === 'loop' ? t("循环已静音") : t("声音已关闭")) : t("声音已开启"),
   }
 }
 
@@ -715,7 +720,7 @@ function EventMediaVideo({ src, className = '', poster, onError, onCanPlay, onTi
   const playback = useEventPlayback(videoRef, src, active, firstPassConsumed)
   return <>
     <video ref={videoRef} className={className} src={src} poster={poster} autoPlay={active} muted={playback.muted} playsInline preload={preload || (active ? 'auto' : 'none')} onCanPlay={onCanPlay} onError={onError} onTimeUpdate={event => onTimeUpdate?.(event.currentTarget.currentTime)} onEnded={playback.handleEnded} />
-    {active && <button type="button" className={`scene-audio-toggle ${playback.needsGesture ? 'scene-audio-toggle--attention' : ''}`} onClick={playback.toggleSound} aria-label={playback.muted ? '开启视频声音' : '关闭视频声音'} aria-pressed={!playback.muted}>
+    {active && <button type="button" className={`scene-audio-toggle ${playback.needsGesture ? 'scene-audio-toggle--attention' : ''}`} onClick={playback.toggleSound} aria-label={playback.muted ? t("开启视频声音") : t("关闭视频声音")} aria-pressed={!playback.muted}>
       <span aria-hidden="true"><Icon name={playback.muted ? 'volume-off' : 'volume-on'} tone="rose" /></span><b>{playback.soundLabel}</b>
     </button>}
   </>
@@ -780,7 +785,7 @@ function SceneMedia({ src, poster, fallbackSrc, fallbackPoster, active, cue, ass
     setVisibleSrc('')
     setLayers([])
   }
-  return <div className="scene-media" data-media-cue={cue || undefined} data-media-asset-id={assetId || undefined} role={cue ? 'img' : undefined} aria-label={cue ? `剧情动态画面：${cue}` : undefined}>
+  return <div className="scene-media" data-media-cue={cue || undefined} data-media-asset-id={assetId || undefined} role={cue ? 'img' : undefined} aria-label={cue ? t("剧情动态画面：{0}", cue) : undefined}>
     {poster && <img className="scene-media__poster" src={poster} alt="" aria-hidden="true" />}
     {layers.map(layer => soundEnabled ? <EventMediaVideo
         key={layer.src}
@@ -810,8 +815,8 @@ function HeartMark({ small = false }: { small?: boolean }) {
   return <span className={small ? 'heart-mark heart-mark--small' : 'heart-mark'} aria-hidden="true"><Icon name="heart" tone="rose" size={small ? 24 : 64} /></span>
 }
 
-function CharacterIdentityPlate({ identity, context = '嘉宾登场', className = '', durationSeconds = 3.4 }: { identity: SceneIdentityCard; context?: string; className?: string; durationSeconds?: number }) {
-  const age = identity.age ? `${identity.age}岁 · ` : ''
+function CharacterIdentityPlate({ identity, context = t("嘉宾登场"), className = '', durationSeconds = 3.4 }: { identity: SceneIdentityCard; context?: string; className?: string; durationSeconds?: number }) {
+  const age = identity.age ? t("{0}岁 · ", identity.age) : ''
   return <div className={`scene-identity-plate ${className}`} style={{ '--accent': identity.accent || '#d986a3', '--identity-duration': `${Math.max(.8, durationSeconds)}s` } as React.CSSProperties} aria-label={`${identity.name}，${publicOccupation(identity)}，${identity.mbti}，${identity.tagline || ''}`}>
     <span>{context}</span>
     <b>{identity.name}</b>
@@ -820,7 +825,7 @@ function CharacterIdentityPlate({ identity, context = '嘉宾登场', className 
   </div>
 }
 
-function SceneIdentitySequence({ cards, sceneKey, timeline = [], currentTime = 0, context = '嘉宾登场', className = '' }: { cards: SceneIdentityCard[]; sceneKey: string; timeline?: SceneIdentityTimeline[]; currentTime?: number; context?: string; className?: string }) {
+function SceneIdentitySequence({ cards, sceneKey, timeline = [], currentTime = 0, context = t("嘉宾登场"), className = '' }: { cards: SceneIdentityCard[]; sceneKey: string; timeline?: SceneIdentityTimeline[]; currentTime?: number; context?: string; className?: string }) {
   const [timelineCycleDone, setTimelineCycleDone] = useState(false)
   const lastTimelineTimeRef = useRef(0)
   const signature = cards.map(card => identityId(card) || `${card.name}:${card.mbti}`).join('|')
@@ -846,7 +851,7 @@ function SceneIdentitySequence({ cards, sceneKey, timeline = [], currentTime = 0
 }
 
 function Loading() {
-  return <main className="loading-screen"><div className="loading-orbit"><HeartMark /></div><p>正在接入心动小屋…</p></main>
+  return <main className="loading-screen"><div className="utility-language"><LanguageSwitch /></div><div className="loading-orbit"><HeartMark /></div><p>{t("正在接入心动小屋…")}</p></main>
 }
 
 function LoginGate({ message }: { message: string }) {
@@ -855,9 +860,10 @@ function LoginGate({ message }: { message: string }) {
       <div className="login-card glass-card">
         <span className="kicker">HEART JOURNEY · INTERNAL PREVIEW</span>
         <HeartMark />
-        <h1>需要内网身份</h1>
+        <LanguageSwitch />
+        <h1>{t("需要内网身份")}</h1>
         <p>{message}</p>
-        <button className="primary-button" onClick={() => location.reload()}>重新进入</button>
+        <button className="primary-button" onClick={() => location.reload()}>{t("重新进入")}</button>
       </div>
     </main>
   )
@@ -871,10 +877,10 @@ const MBTI_ORDER = [
 ]
 
 const STARTUP_STAGE_LABELS = [
-  '正在创建你的本局…',
-  '正在安排同住嘉宾…',
-  '正在准备第一幕…',
-  '连接比平时稍慢，仍在为你开启…',
+  t("正在创建你的本局…"),
+  t("正在安排同住嘉宾…"),
+  t("正在准备第一幕…"),
+  t("连接比平时稍慢，仍在为你开启…"),
 ]
 
 function Landing({ characters, onStart, onStartCustom, busy, startError, llmProviders, llmProvider, onLlmProvider }: {
@@ -933,7 +939,7 @@ function Landing({ characters, onStart, onStartCustom, busy, startError, llmProv
     const timer = window.setTimeout(() => setDeferredBackgroundVideo(backgroundVideo), delay)
     return () => window.clearTimeout(timer)
   }, [backgroundVideo, busy, phase])
-  const customEntry = <button type="button" className="custom-character-entry" disabled={busy} onClick={() => setCreatorOpen(true)}><span><b>创建我的角色</b><small>上传自己的照片，让你的故事由你登场</small></span><Icon name="arrow-right" size={20} /></button>
+  const customEntry = <button type="button" className="custom-character-entry" disabled={busy} onClick={() => setCreatorOpen(true)}><span><b>{t("创建我的角色")}</b><small>{t("上传自己的照片，让你的故事由你登场")}</small></span><Icon name="arrow-right" size={20} /></button>
   return <>
     <main className={`landing landing--${phase}`} hidden={creatorOpen} style={creatorOpen ? { display: 'none' } : undefined}>
       <div className="landing-media" aria-hidden="true">
@@ -944,53 +950,54 @@ function Landing({ characters, onStart, onStartCustom, busy, startError, llmProv
         <div className="sun-glow" />
       </div>
       <header className={`landing-topbar ${llmProviders.length > 1 ? 'landing-topbar--provider' : ''}`}>
-        <span>MBTI 沉浸式恋爱观察实验</span>
+        <span>{t("MBTI 沉浸式恋爱观察实验")}</span>
         <LlmProviderSwitch available={llmProviders} value={llmProvider} onChange={onLlmProvider} disabled={busy} />
+        <LanguageSwitch disabled={busy} />
         <span className="live-pill"><i /> DAY 1</span>
       </header>
       {phase === 'intro' ? <>
         <section className="landing-copy landing-copy--intro">
-          <p className="landing-overline">7 天 6 夜 · 海岛心动酒店</p>
-          <div className="title-lockup"><h1>心动之旅</h1><HeartMark /><p>MBTI 恋爱观察实验</p></div>
+          <p className="landing-overline">{t("7 天 6 夜 · 海岛心动酒店")}</p>
+          <div className="title-lockup"><h1>{t("心动之旅")}</h1><HeartMark /><p>{t("MBTI 恋爱观察实验")}</p></div>
         </section>
         <section className="show-premise glass-card">
-          <span>欢迎入住</span>
-          <h2>七天六夜，故事从第一声“你好”开始。</h2>
-          <p>欢迎来到《心动之旅》。八位来自不同生活轨迹的嘉宾，将在海岛酒店一起生活七天六夜。从初次见面、一起做饭，到组队约会和每晚的心动短信，共同生活的衣食住行会碰撞出怎样的火花？让我们一起期待。</p>
-          <blockquote>帮助别人，也照见自己。找到一位愿意同行的人，更好地发现自己、爱自己。</blockquote>
-          <button className="primary-button start-button" onClick={() => { unlockAudioIntent(); setPhase('mbti') }}><span>先选择你的 MBTI</span><i><Icon name="arrow-right" /></i></button>
+          <span>{t("欢迎入住")}</span>
+          <h2>{t("七天六夜，故事从第一声“你好”开始。")}</h2>
+          <p>{t("欢迎来到《心动之旅》。八位来自不同生活轨迹的嘉宾，将在海岛酒店一起生活七天六夜。从初次见面、一起做饭，到组队约会和每晚的心动短信，共同生活的衣食住行会碰撞出怎样的火花？让我们一起期待。")}</p>
+          <blockquote>{t("帮助别人，也照见自己。找到一位愿意同行的人，更好地发现自己、爱自己。")}</blockquote>
+          <button className="primary-button start-button" onClick={() => { unlockAudioIntent(); setPhase('mbti') }}><span>{t("先选择你的 MBTI")}</span><i><Icon name="arrow-right" /></i></button>
           {customEntry}
         </section>
       </> : phase === 'mbti' ? <>
         <section className="landing-copy landing-copy--selection">
-          <p className="landing-overline">STEP 1 · 选择人格</p>
-          <h1 className="selection-title">你想以哪种方式，走进这七天？</h1>
-          <p className="selection-subtitle">先选择 MBTI，再从对应的一男一女两位角色中确定你的观察视角。</p>
+          <p className="landing-overline">{t("STEP 1 · 选择人格")}</p>
+          <h1 className="selection-title">{t("你想以哪种方式，走进这七天？")}</h1>
+          <p className="selection-subtitle">{t("先选择 MBTI，再从对应的一男一女两位角色中确定你的观察视角。")}</p>
         </section>
-        <section className="mbti-step glass-card" aria-label="选择 MBTI">
+        <section className="mbti-step glass-card" aria-label={t("选择 MBTI")}>
           {customEntry}
-          <div className="selection-step-heading"><span>本季开放 {availableMbtis.length} 种人格</span><small>每种都有男性与女性角色</small></div>
+          <div className="selection-step-heading"><span>{t("本季开放")}{availableMbtis.length} {t("种人格")}</span><small>{t("每种都有男性与女性角色")}</small></div>
           <div className="mbti-grid">
             {availableMbtis.map(mbti => {
               const mbtiCharacters = characters.filter(character => character.mbti === mbti)
               const previewCharacters = [...mbtiCharacters]
                 .sort((left, right) => {
-                  const genderRank = (character: Character) => character.gender === '男性' ? 0 : character.gender === '女性' ? 1 : 2
+                  const genderRank = (character: Character) => ['男性', 'male', 'Male'].includes(character.gender || '') ? 0 : ['女性', 'female', 'Female'].includes(character.gender || '') ? 1 : 2
                   return genderRank(left) - genderRank(right)
                 })
                 .slice(0, 2)
-              const roleSummary = previewCharacters.map(character => `${character.gender || '嘉宾'}${character.name}`).join('、')
-              return <button key={mbti} onClick={() => chooseMbti(mbti)} aria-label={`选择 ${mbti}，${roleSummary || `有 ${mbtiCharacters.length} 位角色`}`}>
+              const roleSummary = previewCharacters.map(character => `${genderLabel(character.gender)} ${character.name}`).join('、')
+              return <button key={mbti} onClick={() => chooseMbti(mbti)} aria-label={t("选择 {0}，{1}", mbti, roleSummary || t("有 {0} 位角色", mbtiCharacters.length))}>
                 <span className="mbti-card__copy">
                   <b>{mbti}</b>
-                  <span className="mbti-card__meta">{mbtiCharacters.length >= 2 ? '一男一女 · 2 位角色' : `${mbtiCharacters.length} 位角色`}</span>
+                  <span className="mbti-card__meta">{mbtiCharacters.length >= 2 ? t("一男一女 · 2 位角色") : t("{0} 位角色", mbtiCharacters.length)}</span>
                 </span>
                 <span className="mbti-card__faces">
                   {previewCharacters.map(character => <img
                     key={character.id}
                     src={character.portrait}
-                    alt={`${mbti} ${character.gender || '嘉宾'}角色${character.name}`}
-                    title={`${character.name} · ${character.gender || '嘉宾'}`}
+                    alt={t("{0} {1}角色{2}", mbti, genderLabel(character.gender), character.name)}
+                    title={`${character.name} · ${genderLabel(character.gender)}`}
                     loading="lazy"
                     decoding="async"
                   />)}
@@ -999,33 +1006,33 @@ function Landing({ characters, onStart, onStartCustom, busy, startError, llmProv
               </button>
             })}
           </div>
-          <button className="selection-back" onClick={() => setPhase('intro')}><Icon name="arrow-left" size={15} />返回节目介绍</button>
+          <button className="selection-back" onClick={() => setPhase('intro')}><Icon name="arrow-left" size={15} />{t("返回节目介绍")}</button>
         </section>
       </> : <>
         <section className="landing-copy landing-copy--role">
-          <p className="landing-overline">STEP 2 · 选择角色</p>
-          <h1 className="selection-title">{selectedMbti} 的两个故事起点</h1>
-          <p className="selection-subtitle">选择性别与具体人物。另一位同类型嘉宾仍可能进入本局，成为你可以认识的人。</p>
+          <p className="landing-overline">{t("STEP 2 · 选择角色")}</p>
+          <h1 className="selection-title">{selectedMbti} {t("的两个故事起点")}</h1>
+          <p className="selection-subtitle">{t("选择性别与具体人物。另一位同类型嘉宾仍可能进入本局，成为你可以认识的人。")}</p>
         </section>
-        <section className="role-step" aria-label={`选择 ${selectedMbti} 角色`}>
+        <section className="role-step" aria-label={t("选择 {0} 角色", selectedMbti)}>
           <div className="role-picker">
-            {roleOptions.map(character => <button key={character.id} className={character.id === selected?.id ? 'active' : ''} disabled={busy} onClick={() => setSelectedId(character.id)} style={{ '--accent': character.accent } as React.CSSProperties} aria-pressed={character.id === selected?.id} aria-label={`选择${character.gender || ''}角色${character.name}，${publicOccupation(character)}，${character.tagline}`}>
-              <img src={character.portrait} alt={`${character.name}头像`} />
-              <span><em>{character.gender || '嘉宾'}</em><b>{character.name}</b><small>{publicOccupation(character)}</small><small>{character.tagline}</small></span><i><Icon name="arrow-right" size={17} tone="rose" /></i>
+            {roleOptions.map(character => <button key={character.id} className={character.id === selected?.id ? 'active' : ''} disabled={busy} onClick={() => setSelectedId(character.id)} style={{ '--accent': character.accent } as React.CSSProperties} aria-pressed={character.id === selected?.id} aria-label={t("选择{0}角色{1}，{2}，{3}", genderLabel(character.gender), character.name, publicOccupation(character), character.tagline)}>
+              <img src={character.portrait} alt={t("{0}头像", character.name)} />
+              <span><em>{genderLabel(character.gender)}</em><b>{character.name}</b><small>{publicOccupation(character)}</small><small>{character.tagline}</small></span><i><Icon name="arrow-right" size={17} tone="rose" /></i>
             </button>)}
           </div>
           {selected ? <section className="character-preview glass-card" style={{ '--accent': selected.accent } as React.CSSProperties}>
-            <div className="character-preview__heading"><span>{selected.mbti} · {selected.gender || '嘉宾'}</span><small>你的视角 · 开局后不可与自己私聊</small></div>
+            <div className="character-preview__heading"><span>{selected.mbti} · {genderLabel(selected.gender)}</span><small>{t("你的视角 · 开局后不可与自己私聊")}</small></div>
             <h2>{selected.publicMask}</h2>
             <p>{selected.independentInterest}</p>
-            <dl><div><dt>表达方式</dt><dd>{selected.voice}</dd></div><div><dt>关系边界</dt><dd>{selected.boundary}</dd></div></dl>
-            {selected.mediaStatus === 'planned' && <p className="static-media-note">{selected.portraitKind === 'mbti-gender-concept-anchor' ? '当前展示的是该 MBTI 与性别的概念形象，不冒充真人身份。专属定妆照与动态视频审核完成后会自动替换。' : '当前以静态人物图进入；动态形象准备完成后会自动启用，不会借用其他嘉宾的视频。'}</p>}
-            <button className="primary-button start-button" disabled={busy} onClick={() => { unlockAudioIntent(); onStart(selected.mbti, selected.id) }}><span>{busy ? STARTUP_STAGE_LABELS[startupStage] : startError ? '重新尝试开启' : `跟随${selected.name}进入小屋`}</span><i>{busy ? '···' : <Icon name="arrow-right" />}</i></button>
+            <dl><div><dt>{t("表达方式")}</dt><dd>{selected.voice}</dd></div><div><dt>{t("关系边界")}</dt><dd>{selected.boundary}</dd></div></dl>
+            {selected.mediaStatus === 'planned' && <p className="static-media-note">{selected.portraitKind === 'mbti-gender-concept-anchor' ? t("当前展示的是该 MBTI 与性别的概念形象，不冒充真人身份。专属定妆照与动态视频审核完成后会自动替换。") : t("当前以静态人物图进入；动态形象准备完成后会自动启用，不会借用其他嘉宾的视频。")}</p>}
+            <button className="primary-button start-button" disabled={busy} onClick={() => { unlockAudioIntent(); onStart(selected.mbti, selected.id) }}><span>{busy ? STARTUP_STAGE_LABELS[startupStage] : startError ? t("重新尝试开启") : t("跟随{0}进入小屋", selected.name)}</span><i>{busy ? '···' : <Icon name="arrow-right" />}</i></button>
             {(busy || startError) && <p className={`role-start-feedback ${startError ? 'role-start-feedback--error' : ''}`} role={startError ? 'alert' : 'status'} aria-live="polite">
-              {startError || (startupStage < 3 ? '正在建立本局，不会等待视频下载，也无需重复点击。' : '人物图片会先陪你等待；动态画面进入剧情后再加载。')}
+              {startError || (startupStage < 3 ? t("正在建立本局，不会等待视频下载，也无需重复点击。") : t("人物图片会先陪你等待；动态画面进入剧情后再加载。"))}
             </p>}
-          </section> : <div className="role-empty glass-card"><span>选择一位角色</span><p>点击上方的男性或女性角色，先读完人物详情，再决定是否以 TA 的视角开局。</p></div>}
-          <button className="selection-back" disabled={busy} onClick={() => { setSelectedId(''); setPhase('mbti') }}><Icon name="arrow-left" size={15} />重新选择 MBTI</button>
+          </section> : <div className="role-empty glass-card"><span>{t("选择一位角色")}</span><p>{t("点击上方的男性或女性角色，先读完人物详情，再决定是否以 TA 的视角开局。")}</p></div>}
+          <button className="selection-back" disabled={busy} onClick={() => { setSelectedId(''); setPhase('mbti') }}><Icon name="arrow-left" size={15} />{t("重新选择 MBTI")}</button>
           {customEntry}
         </section>
       </>}
@@ -1036,7 +1043,7 @@ function Landing({ characters, onStart, onStartCustom, busy, startError, llmProv
 
 function sceneContext(node: StoryNode, snapshot: Snapshot) {
   const [eyebrowLocation, eyebrowTime] = (node.eyebrow || '').split('/').map(value => value.trim())
-  const locationName = snapshot.sceneContext?.locationName || node.location || eyebrowLocation || '心动小屋'
+  const locationName = snapshot.sceneContext?.locationName || node.location || eyebrowLocation || t("心动小屋")
   return {
     locationId: snapshot.sceneContext?.locationId,
     locationName,
@@ -1051,33 +1058,33 @@ function HeartInboxPhone({ snapshot, characters }: { snapshot: Snapshot; charact
   const outgoing = sent[sent.length - 1]
   const recipient = outgoing?.recipientCharacterId ? characters.find(character => character.id === outgoing.recipientCharacterId) : undefined
   return (
-    <section className="heart-phone" aria-label="心动短信手机">
+    <section className="heart-phone" aria-label={t("心动短信手机")}>
       <div className="heart-phone__speaker" aria-hidden="true" />
-      <header><span>22:30</span><b>心动短信</b><i>{incoming.length ? `${incoming.length} 条新消息` : '收件结果'}</i></header>
+      <header><span>22:30</span><b>{t("心动短信")}</b><i>{incoming.length ? t("{0} 条新消息", incoming.length) : t("收件结果")}</i></header>
       <div className="heart-phone__screen">
         {incoming.length ? incoming.map((message, index) => (
           <article className="heart-message heart-message--incoming" key={message.id || `${index}-${message.text}`}>
-            <span>{message.isAnonymous === false && message.senderCharacterId ? (characters.find(character => character.id === message.senderCharacterId)?.name || '一位嘉宾') : '匿名嘉宾'} 发来{message.receivedAt ? ` · ${new Date(message.receivedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}` : ''}</span>
+            <span>{message.isAnonymous === false && message.senderCharacterId ? (characters.find(character => character.id === message.senderCharacterId)?.name || t("一位嘉宾")) : t("匿名嘉宾")} {t("发来")}{message.receivedAt ? ` · ${new Date(message.receivedAt).toLocaleTimeString(gameLanguage, { hour: '2-digit', minute: '2-digit' })}` : ''}</span>
             <p>{message.text}</p>
           </article>
         )) : <article className="heart-message heart-message--pending">
-          <span>你的收件箱</span>
-          <p>节目组尚未公布收件结果。收到的真实短信会直接出现在这里。</p>
+          <span>{t("你的收件箱")}</span>
+          <p>{t("节目组尚未公布收件结果。收到的真实短信会直接出现在这里。")}</p>
         </article>}
         {outgoing && <article className="heart-message heart-message--outgoing">
-          <span>你发给 {recipient?.name || '今晚想继续认识的人'}</span>
+          <span>{t("你发给")}{recipient?.name || t("今晚想继续认识的人")}</span>
           <p>{outgoing.text}</p>
         </article>}
       </div>
-      <footer><span>来自本轮真实收发记录</span><i><Icon name="status-dot" size={13} tone="rose" /></i></footer>
+      <footer><span>{t("来自本轮真实收发记录")}</span><i><Icon name="status-dot" size={13} tone="rose" /></i></footer>
     </section>
   )
 }
 
 const HEART_MESSAGE_SUGGESTIONS = [
-  '今天和你聊天很舒服，希望明天还能坐近一点。',
-  '谢谢你记住我随口说的小事，想继续认识你。',
-  '今晚的海风很好，下次一起去露台走走吧。',
+  t("今天和你聊天很舒服，希望明天还能坐近一点。"),
+  t("谢谢你记住我随口说的小事，想继续认识你。"),
+  t("今晚的海风很好，下次一起去露台走走吧。"),
 ]
 
 function HeartMessageComposer({ choices, characters, busy, disabled, onSend }: {
@@ -1090,26 +1097,26 @@ function HeartMessageComposer({ choices, characters, busy, disabled, onSend }: {
   const selectedCharacterId = selectedChoice?.characterId || selectedChoice?.targetCharacterId
   const selectedCharacter = characters.find(character => character.id === selectedCharacterId)
   return (
-    <section className="heart-compose" aria-label="编辑心动短信">
-      <div className="character-choices character-choices--compact" role="list" aria-label="选择收信人">
+    <section className="heart-compose" aria-label={t("编辑心动短信")}>
+      <div className="character-choices character-choices--compact" role="list" aria-label={t("选择收信人")}>
         {choices.map(choice => {
           const characterId = choice.characterId || choice.targetCharacterId
           const character = characters.find(item => item.id === characterId)
           const selected = choice.id === selectedChoice?.id
           return <button type="button" role="listitem" className={selected ? 'selected' : ''} key={choice.id} onClick={() => setSelectedId(choice.id)} disabled={busy || disabled} style={character ? { '--accent': character.accent } as React.CSSProperties : undefined} aria-pressed={selected}>
-            {character && <img src={character.portrait} alt={`${character.name}头像`} />}
+            {character && <img src={character.portrait} alt={t("{0}头像", character.name)} />}
             <span><b>{character?.name || choice.label}</b><small>{character ? `${character.mbti} · ${publicOccupation(character)}` : choice.hint}</small></span>
             <i>{selected ? <Icon name="check" size={16} tone="rose" /> : <Icon name="radio-empty" size={16} tone="lavender" />}</i>
           </button>
         })}
       </div>
       {selectedChoice && <div className="heart-compose__phone">
-        <header><span>发送给</span><b>{selectedCharacter?.name || '一位嘉宾'}</b><small>匿名发送</small></header>
-        <div className="heart-compose__suggestions" aria-label="短信建议">
+        <header><span>{t("发送给")}</span><b>{selectedCharacter?.name || t("一位嘉宾")}</b><small>{t("匿名发送")}</small></header>
+        <div className="heart-compose__suggestions" aria-label={t("短信建议")}>
           {HEART_MESSAGE_SUGGESTIONS.map((suggestion, index) => <button type="button" key={suggestion} onClick={() => setDraft(suggestion)}><i>0{index + 1}</i>{suggestion}</button>)}
         </div>
-        <label><span>写下你真正想说的话</span><textarea value={draft} onChange={event => setDraft(event.target.value)} maxLength={120} rows={3} placeholder="也可以完全自己写…" /></label>
-        <footer><small>{draft.trim().length}/120 · 你可以继续修改</small><button type="button" disabled={busy || disabled || !draft.trim()} onClick={() => onSend(selectedChoice, draft.trim())}>{busy ? '发送中…' : '发送这条短信'}</button></footer>
+        <label><span>{t("写下你真正想说的话")}</span><textarea value={draft} onChange={event => setDraft(event.target.value)} maxLength={120} rows={3} placeholder={t("也可以完全自己写…")} /></label>
+        <footer><small>{draft.trim().length}{t("/120 · 你可以继续修改")}</small><button type="button" disabled={busy || disabled || !draft.trim()} onClick={() => onSend(selectedChoice, draft.trim())}>{busy ? t("发送中…") : t("发送这条短信")}</button></footer>
       </div>}
     </section>
   )
@@ -1122,11 +1129,11 @@ function FreeChoiceComposer({ choices, busy, disabled, onSend }: {
   const [routeId, setRouteId] = useState(choices[0]?.id || '')
   const route = choices.find(choice => choice.id === routeId) || choices[0]
   if (!route) return null
-  return <section className="free-choice-composer" aria-label="自定义行动">
-    <label><span>或者，用你自己的方式表达</span><textarea rows={2} maxLength={180} value={draft} onChange={event => setDraft(event.target.value)} placeholder="例如：先和大家打声招呼，再去看看有没有人需要帮忙…" /></label>
-    <div className="free-choice-composer__routes"><span>这句话更接近</span>{choices.map((choice, index) => <button type="button" className={choice.id === route.id ? 'selected' : ''} aria-pressed={choice.id === route.id} key={choice.id} onClick={() => setRouteId(choice.id)}>方案 {String(index + 1).padStart(2, '0')}</button>)}</div>
-    <button className="free-choice-composer__send" type="button" disabled={busy || disabled || !draft.trim()} onClick={() => onSend(route, draft.trim())}><span>{busy ? '正在写入故事…' : '用这句话推进剧情'}</span><Icon className={busy ? 'ui-icon--placeholder' : ''} name="arrow-right" size={17} /></button>
-    <small>当前剧情仍沿你选中的行动路线推进；自定义原话会一并发送，供后端人物记忆接入。</small>
+  return <section className="free-choice-composer" aria-label={t("自定义行动")}>
+    <label><span>{t("或者，用你自己的方式表达")}</span><textarea rows={2} maxLength={180} value={draft} onChange={event => setDraft(event.target.value)} placeholder={t("例如：先和大家打声招呼，再去看看有没有人需要帮忙…")} /></label>
+    <div className="free-choice-composer__routes"><span>{t("这句话更接近")}</span>{choices.map((choice, index) => <button type="button" className={choice.id === route.id ? 'selected' : ''} aria-pressed={choice.id === route.id} key={choice.id} onClick={() => setRouteId(choice.id)}>{t("方案")}{String(index + 1).padStart(2, '0')}</button>)}</div>
+    <button className="free-choice-composer__send" type="button" disabled={busy || disabled || !draft.trim()} onClick={() => onSend(route, draft.trim())}><span>{busy ? t("正在写入故事…") : t("用这句话推进剧情")}</span><Icon className={busy ? 'ui-icon--placeholder' : ''} name="arrow-right" size={17} /></button>
+    <small>{t("当前剧情仍沿你选中的行动路线推进；自定义原话会一并发送，供后端人物记忆接入。")}</small>
   </section>
 }
 
@@ -1164,20 +1171,20 @@ function CharacterDock({ characters, snapshot, chatContexts, guidedCharacterId, 
   }, [initialVenueId, locationFilter, venues])
   const venueForCharacter = (characterId: string) => venues.find(venue => venue.characters.some(character => character.id === characterId))
   return (
-    <nav className={`character-dock ${guidedCharacter ? 'character-dock--guided' : ''} ${venues.length ? 'character-dock--with-location' : ''}`} aria-label="按地点发起嘉宾交流">
+    <nav className={`character-dock ${guidedCharacter ? 'character-dock--guided' : ''} ${venues.length ? 'character-dock--with-location' : ''}`} aria-label={t("按地点发起嘉宾交流")}>
       <div className="dock-label">
-        <span>{guidedCharacter ? (guidedComplete ? '这次交流已完成' : '该你开口了') : '心动小屋'}</span>
-        <small>{guidedCharacter ? (guidedComplete ? `${guidedCharacter.name}已记住这次对话` : `去和${guidedCharacter.name}打个招呼`) : `${currentLocation}${currentTime ? ` · ${currentTime}` : ''}`}</small>
+        <span>{guidedCharacter ? (guidedComplete ? t("这次交流已完成") : t("该你开口了")) : t("心动小屋")}</span>
+        <small>{guidedCharacter ? (guidedComplete ? t("{0}已记住这次对话", guidedCharacter.name) : t("去和{0}打个招呼", guidedCharacter.name)) : `${currentLocation}${currentTime ? ` · ${currentTime}` : ''}`}</small>
       </div>
-      {!!venues.length && <div className="dock-location-filter" aria-label="按真实地点筛选嘉宾">
-        <span>嘉宾在哪里</span>
+      {!!venues.length && <div className="dock-location-filter" aria-label={t("按真实地点筛选嘉宾")}>
+        <span>{t("嘉宾在哪里")}</span>
         <select value={locationFilter} onChange={event => setLocationFilter(event.target.value)}>
-          <option value="all">全部地点</option>
-          {venues.map(venue => <option value={venue.locationId} key={venue.locationId}>{venue.locationName} · {venue.characters.length}人</option>)}
+          <option value="all">{t("全部地点")}</option>
+          {venues.map(venue => <option value={venue.locationId} key={venue.locationId}>{venue.locationName} · {venue.characters.length}{t("人")}</option>)}
         </select>
         {selectedVenue?.supportsGroup
-          ? <button className="dock-group-launch" type="button" disabled={groupDisabled} onClick={() => onOpenGroup(selectedVenue)}>{groupDisabled ? '先完成破冰' : `和${selectedVenue.characters.length}人群聊`}</button>
-          : <small>{selectedVenue ? `${selectedVenue.locationName}仅支持私聊` : '选择地点可发起群聊'}</small>}
+          ? <button className="dock-group-launch" type="button" disabled={groupDisabled} onClick={() => onOpenGroup(selectedVenue)}>{groupDisabled ? t("先完成破冰") : t("和{0}人群聊", selectedVenue.characters.length)}</button>
+          : <small>{selectedVenue ? t("{0}仅支持私聊", selectedVenue.locationName) : t("选择地点可发起群聊")}</small>}
       </div>}
       <div className="dock-scroll">
         {dockCharacters.map((character) => {
@@ -1194,9 +1201,9 @@ function CharacterDock({ characters, snapshot, chatContexts, guidedCharacterId, 
             channel: '1v1',
           }
           return (
-            <button ref={guided ? guidedRef : undefined} className={`dock-avatar ${guided ? 'dock-avatar--guided' : ''} ${chatUnavailable ? 'dock-avatar--unavailable' : ''} ${isSelf ? 'dock-avatar--self' : ''}`} key={character.id} onClick={() => !chatUnavailable && onOpen(character, context)} disabled={chatUnavailable} style={{ '--accent': character.accent } as React.CSSProperties} aria-label={isSelf ? `${character.name}，你的当前视角，不可与自己私聊` : chatUnavailable ? `${character.name}，当前暂不可私聊` : guided ? `剧情正在等你，与${character.name}交流` : `在${venue?.locationName || currentLocation}与${character.name}交流，${character.mbti}，${character.tagline}`}>
+            <button ref={guided ? guidedRef : undefined} className={`dock-avatar ${guided ? 'dock-avatar--guided' : ''} ${chatUnavailable ? 'dock-avatar--unavailable' : ''} ${isSelf ? 'dock-avatar--self' : ''}`} key={character.id} onClick={() => !chatUnavailable && onOpen(character, context)} disabled={chatUnavailable} style={{ '--accent': character.accent } as React.CSSProperties} aria-label={isSelf ? t("{0}，你的当前视角，不可与自己私聊", character.name) : chatUnavailable ? t("{0}，当前暂不可私聊", character.name) : guided ? t("剧情正在等你，与{0}交流", character.name) : t("在{0}与{1}交流，{2}，{3}", venue?.locationName || currentLocation, character.name, character.mbti, character.tagline)}>
               <span className="dock-avatar__photo"><img src={character.portrait} alt="" />{(guided || memoryCount > 0) && <i className={guided ? `guided-badge ${guidedComplete ? 'guided-badge--done' : ''}` : ''}>{guided ? (guidedComplete ? <Icon name="check" size={10} /> : 1) : memoryCount}</i>}</span>
-              <span className="dock-avatar__copy"><span><b>{character.name}</b><em>{character.mbti}</em></span><small className="dock-avatar__role">{publicOccupation(character)} · {character.gender || '嘉宾'}</small><small>{isSelf ? '你的视角 · 不可私聊' : chatUnavailable ? '当前剧情中暂不可私聊' : `${venue?.locationName || currentLocation} · ${character.tagline}`}</small></span>
+              <span className="dock-avatar__copy"><span><b>{character.name}</b><em>{character.mbti}</em></span><small className="dock-avatar__role">{publicOccupation(character)} · {genderLabel(character.gender)}</small><small>{isSelf ? t("你的视角 · 不可私聊") : chatUnavailable ? t("当前剧情中暂不可私聊") : `${venue?.locationName || currentLocation} · ${character.tagline}`}</small></span>
             </button>
           )
         })}
@@ -1220,12 +1227,12 @@ function ChatSheet({ character, characters, snapshot, embeddedOpener, context, e
   const latest = memories[memories.length - 1]
   const perspective = characters.find(item => item.id === snapshot.player.perspectiveCharacterId) || characters.find(item => item.isPlayerPerspective)
   const baseFallback = FALLBACK_OPENERS[character.id] || {
-    stageDirection: `${character.name}给你留出了一个可以慢慢说话的位置。`,
-    line: `你好，我是${character.name}。刚才大家都在，还没来得及好好认识你。现在感觉怎么样？`,
+    stageDirection: t("{0}给你留出了一个可以慢慢说话的位置。", character.name),
+    line: t("你好，我是{0}。刚才大家都在，还没来得及好好认识你。现在感觉怎么样？", character.name),
   }
   const fallback = latest ? {
-    stageDirection: `${character.name}看到你回来，把话题留在了上次停下的地方。`,
-    line: `你回来了。上次你说到“${(latest.summary || latest.playerText).slice(0, 32)}”，我还记得。今天想先从哪里聊起？`,
+    stageDirection: t("{0}看到你回来，把话题留在了上次停下的地方。", character.name),
+    line: t("你回来了。上次你说到“{0}”，我还记得。今天想先从哪里聊起？", (latest.summary || latest.playerText).slice(0, 32)),
   } : baseFallback
   const initialCardOpener = character.opener || character.openingLine
   const initialPayload = embeddedOpener || snapshot.chatOpeners?.[character.id] || (initialCardOpener ? { opener: initialCardOpener, suggestedPrompts: character.suggestedPrompts } : undefined)
@@ -1236,7 +1243,7 @@ function ChatSheet({ character, characters, snapshot, embeddedOpener, context, e
   const [remotePrompts, setRemotePrompts] = useState<ChatSuggestionInput[]>(() => promptsFromPayload(initialPayload))
   const axes = snapshot.relationships?.[character.id]
   const attitude = snapshot.attitudes?.[character.id] || 'curious'
-  const currentLocation = context.locationName || '心动小屋'
+  const currentLocation = context.locationName || t("心动小屋")
   const currentTime = context.time
   useEffect(() => {
     const currentEmbedded = embeddedOpener || snapshot.chatOpeners?.[character.id]
@@ -1308,49 +1315,49 @@ function ChatSheet({ character, characters, snapshot, embeddedOpener, context, e
     if (sent) setDraft('')
   }
   return (
-    <div className="sheet-backdrop" role="dialog" aria-modal="true" aria-label={`与${character.name}私聊`}>
+    <div className="sheet-backdrop" role="dialog" aria-modal="true" aria-label={t("与{0}私聊", character.name)}>
       <section className={`chat-sheet ${memories.length || busy ? 'chat-sheet--has-history' : ''}`} style={{ '--accent': character.accent } as React.CSSProperties}>
         <div className="chat-portrait">
           <div className="chat-portrait__media">
             <img className="chat-portrait__blur" src={character.portrait} alt="" />
             {(character.video || '').trim()
               ? <EventMediaVideo className="chat-portrait__subject" src={character.video} poster={character.portrait} active firstPassConsumed />
-              : <img className="chat-portrait__subject chat-portrait__subject--static" src={character.portrait} alt={`${character.name}静态人物形象`} />}
+              : <img className="chat-portrait__subject chat-portrait__subject--static" src={character.portrait} alt={t("{0}静态人物形象", character.name)} />}
           </div>
           <div className="chat-portrait__scrim" />
-          <button className="close-button" onClick={onClose} aria-label="关闭私聊"><Icon name="close" size={24} /></button>
+          <button className="close-button" onClick={onClose} aria-label={t("关闭私聊")}><Icon name="close" size={24} /></button>
           <div className="chat-identity"><span>{character.mbti}</span><h2>{character.name}</h2><p>{publicOccupation(character)} · {character.tagline}</p><small>{currentLocation}{currentTime ? ` · ${currentTime}` : ''}</small></div>
-          <div className="memory-seal"><HeartMark small /><span>{memories.length ? `${memories.length} 段共同记忆` : '从这一句话开始记住你'}</span></div>
+          <div className="memory-seal"><HeartMark small /><span>{memories.length ? t("{0} 段共同记忆", memories.length) : t("从这一句话开始记住你")}</span></div>
         </div>
         <div className="chat-body">
           <div className="agent-note">
-            <span>当前态度 · {ATTITUDE_LABELS[attitude] || attitude}</span>
+            <span>{t("当前态度 ·")}{ATTITUDE_LABELS[attitude] || attitude}</span>
             <p>{character.independentInterest}</p>
             {axes && <div className="relationship-axes">
               {(['trust', 'affection', 'respect', 'attraction'] as const).map(axis => <i key={axis}>{AXIS_LABELS[axis]} {axes[axis] >= 0 ? '+' : ''}{axes[axis]}</i>)}
             </div>}
           </div>
-          <div className="message-stream" ref={streamRef} role="log" aria-live="polite" aria-label={`与${character.name}的对话记录`} tabIndex={0}>
-            {!openerVisible && <div className="message agent opener-loading" aria-live="polite"><b>{character.name}正在朝你走来</b><span><i /><i /><i /></span><small>正在结合此刻的剧情和你们的记忆…</small></div>}
-            {openerVisible && <div className="message agent conversation-opener"><b>{character.name} · {latest ? '又见面了' : '初次寒暄'}</b><em>{opener.stageDirection}</em><p>{opener.line}</p>{openerLoading && <small>正在读取此刻更贴近人物卡的表达…</small>}{!openerLoading && openerGenerationSource === 'engine-fallback' && <small className="generation-source generation-source--fallback">所选模型本轮未通过人物卡合同，已显示安全台本</small>}</div>}
+          <div className="message-stream" ref={streamRef} role="log" aria-live="polite" aria-label={t("与{0}的对话记录", character.name)} tabIndex={0}>
+            {!openerVisible && <div className="message agent opener-loading" aria-live="polite"><b>{character.name}{t("正在朝你走来")}</b><span><i /><i /><i /></span><small>{t("正在结合此刻的剧情和你们的记忆…")}</small></div>}
+            {openerVisible && <div className="message agent conversation-opener"><b>{character.name} · {latest ? t("又见面了") : t("初次寒暄")}</b><em>{opener.stageDirection}</em><p>{opener.line}</p>{openerLoading && <small>{t("正在读取此刻更贴近人物卡的表达…")}</small>}{!openerLoading && openerGenerationSource === 'engine-fallback' && <small className="generation-source generation-source--fallback">{t("所选模型本轮未通过人物卡合同，已显示安全台本")}</small>}</div>}
             {memories.slice(-10).map(memory => (
               <div className="message-pair" key={memory.id}>
                 <div className="message player"><p>{memory.playerText}</p></div>
-                <div className="message agent"><b>{character.name} · {ATTITUDE_LABELS[memory.attitude] || memory.attitude}</b>{memory.stageDirection && <em>{memory.stageDirection}</em>}<p>{memory.agentReply}</p><small>{memory.locationName || memory.time ? `${memory.locationName || currentLocation}${memory.time ? ` · ${memory.time}` : ''}｜` : ''}{memory.summary || '已写入你们的共同记忆'}</small></div>
+                <div className="message agent"><b>{character.name} · {ATTITUDE_LABELS[memory.attitude] || memory.attitude}</b>{memory.stageDirection && <em>{memory.stageDirection}</em>}<p>{memory.agentReply}</p><small>{memory.locationName || memory.time ? `${memory.locationName || currentLocation}${memory.time ? ` · ${memory.time}` : ''}｜` : ''}{memory.summary || t("已写入你们的共同记忆")}</small></div>
               </div>
             ))}
             {busy && <div className="message agent typing"><i /><i /><i /></div>}
             <div className="message-stream__end" aria-hidden="true" />
           </div>
-          <div className="quick-prompts" aria-label="对话建议">
+          <div className="quick-prompts" aria-label={t("对话建议")}>
             {suggestedPrompts.map((prompt, index) => <button className={`quick-prompt quick-prompt--${prompt.kind}`} key={`${index}-${prompt.kind}-${prompt.text}`} onClick={() => { setDraft(prompt.text); inputRef.current?.focus() }} aria-label={`${prompt.label}：${prompt.text}`}><i>{prompt.label}</i>{prompt.text}</button>)}
           </div>
           {error && <p className="chat-error" role="alert">{error}</p>}
           <form className="chat-composer" onSubmit={submit}>
-            <textarea ref={inputRef} value={draft} maxLength={240} rows={1} placeholder={`只对${character.name}说…`} onChange={e => setDraft(e.target.value)} />
-            <button type="submit" disabled={!draft.trim() || busy} aria-label="发送"><Icon name="arrow-up-right" size={22} /></button>
+            <textarea ref={inputRef} value={draft} maxLength={240} rows={1} placeholder={t("只对{0}说…", character.name)} onChange={e => setDraft(e.target.value)} />
+            <button type="submit" disabled={!draft.trim() || busy} aria-label={t("发送")}><Icon name="arrow-up-right" size={22} /></button>
           </form>
-          <p className="memory-rule">这段交流只进入 {character.name} 的记忆；边界与剧情事实由游戏规则裁决</p>
+          <p className="memory-rule">{t("这段交流只进入")}{character.name} {t("的记忆；边界与剧情事实由游戏规则裁决")}</p>
         </div>
       </section>
     </div>
@@ -1409,21 +1416,21 @@ function GroupChatSheet({ venue, characters, snapshot, busy, error, onClose, onS
     if (sent) setDraft('')
   }
   const promptOptions = [
-    `我们都在${venue.locationName}，要不要先说说刚才各自注意到谁了？`,
-    '如果明天要三个人组队，你们最想一起做什么？',
-    '先不聊任务了，你们来这里最想被别人看见哪一面？',
+    t("我们都在{0}，要不要先说说刚才各自注意到谁了？", venue.locationName),
+    t("如果明天要三个人组队，你们最想一起做什么？"),
+    t("先不聊任务了，你们来这里最想被别人看见哪一面？"),
   ]
-  return <div className="sheet-backdrop" role="dialog" aria-modal="true" aria-label={`${venue.locationName}群聊`}>
+  return <div className="sheet-backdrop" role="dialog" aria-modal="true" aria-label={t("{0}群聊", venue.locationName)}>
     <section className="group-chat-sheet">
       <div className="group-chat__backdrop" aria-hidden="true">
         {selectedCharacters.slice(0, 3).map((character, index) => <img src={character.portrait} alt="" key={character.id} style={{ '--portrait-index': index } as React.CSSProperties} />)}
       </div>
       <div className="group-chat__scrim" />
       <header className="group-chat__header">
-        <div><span>{venue.locationName} · {venue.time || snapshot.sceneContext?.time || '此刻'}</span><h2>和在场的人聊一会儿</h2><p>选择 2–4 位嘉宾；每个人都会依据自己的角色卡回应，并分别记住这次对话。</p></div>
-        <button type="button" onClick={onClose} aria-label="关闭群聊"><Icon name="close" size={24} /></button>
+        <div><span>{venue.locationName} · {venue.time || snapshot.sceneContext?.time || t("此刻")}</span><h2>{t("和在场的人聊一会儿")}</h2><p>{t("选择 2–4 位嘉宾；每个人都会依据自己的角色卡回应，并分别记住这次对话。")}</p></div>
+        <button type="button" onClick={onClose} aria-label={t("关闭群聊")}><Icon name="close" size={24} /></button>
       </header>
-      <div className="group-chat__participants" aria-label="选择群聊嘉宾">
+      <div className="group-chat__participants" aria-label={t("选择群聊嘉宾")}>
         {venue.characters.map(item => {
           const character = characters.find(candidate => candidate.id === item.id)
           const selected = selectedIds.includes(item.id)
@@ -1434,25 +1441,25 @@ function GroupChatSheet({ venue, characters, snapshot, busy, error, onClose, onS
         })}
       </div>
       <div className="group-chat__history" ref={streamRef} role="log" aria-live="polite">
-        {!visibleMemories.length && <div className="group-chat__empty"><b>这处群聊还没有记录</b><span>你的第一句话会带上时间、地点和在场嘉宾，写进每个人各自的记忆。</span></div>}
+        {!visibleMemories.length && <div className="group-chat__empty"><b>{t("这处群聊还没有记录")}</b><span>{t("你的第一句话会带上时间、地点和在场嘉宾，写进每个人各自的记忆。")}</span></div>}
         {visibleMemories.map((memory, index) => {
           const previous = visibleMemories[index - 1]
           const showPlayer = !previous || previous.conversationId !== memory.conversationId || previous.playerText !== memory.playerText || previous.time !== memory.time
           const speaker = characters.find(character => character.id === memory.characterId)
           return <div className="group-chat__turn" key={memory.id}>
-            {showPlayer && <div className="message player"><p>{memory.playerText}</p><small>{memory.locationName} · {memory.time}{memory.participantNames?.length ? ` · 与${memory.participantNames.filter(name => name !== snapshot.player.displayName).join('、')}` : ''}</small></div>}
-            <div className="message agent"><b>{speaker?.name || '嘉宾'} · {ATTITUDE_LABELS[memory.attitude] || memory.attitude}</b>{memory.stageDirection && <em>{memory.stageDirection}</em>}<p>{memory.agentReply}</p><small>{memory.summary || '这句话已分别写入角色记忆'}</small></div>
+            {showPlayer && <div className="message player"><p>{memory.playerText}</p><small>{memory.locationName} · {memory.time}{memory.participantNames?.length ? t(" · 与{0}", memory.participantNames.filter(name => name !== snapshot.player.displayName).join('、')) : ''}</small></div>}
+            <div className="message agent"><b>{speaker?.name || t("嘉宾")} · {ATTITUDE_LABELS[memory.attitude] || memory.attitude}</b>{memory.stageDirection && <em>{memory.stageDirection}</em>}<p>{memory.agentReply}</p><small>{memory.summary || t("这句话已分别写入角色记忆")}</small></div>
           </div>
         })}
         {busy && <div className="message agent typing"><i /><i /><i /></div>}
       </div>
-      <div className="group-chat__prompts" aria-label="群聊开场建议">{promptOptions.map(prompt => <button type="button" key={prompt} onClick={() => setDraft(prompt)}>{prompt}</button>)}</div>
+      <div className="group-chat__prompts" aria-label={t("群聊开场建议")}>{promptOptions.map(prompt => <button type="button" key={prompt} onClick={() => setDraft(prompt)}>{prompt}</button>)}</div>
       {error && <p className="group-chat__error" role="alert">{error}</p>}
       <form className="group-chat__composer" onSubmit={submit}>
-        <textarea rows={1} maxLength={240} value={draft} onChange={event => setDraft(event.target.value)} placeholder={`对${selectedCharacters.map(character => character.name).join('、') || '在场嘉宾'}说…`} />
-        <button type="submit" disabled={busy || selectedIds.length < 2 || !draft.trim()} aria-label="发送群聊消息"><Icon name="arrow-up-right" size={22} /></button>
+        <textarea rows={1} maxLength={240} value={draft} onChange={event => setDraft(event.target.value)} placeholder={t("对{0}说…", selectedCharacters.map(character => character.name).join('、') || t("在场嘉宾"))} />
+        <button type="submit" disabled={busy || selectedIds.length < 2 || !draft.trim()} aria-label={t("发送群聊消息")}><Icon name="arrow-up-right" size={22} /></button>
       </form>
-      <p className="group-chat__rule">群聊只可邀请此刻确实在 {venue.locationName} 的嘉宾；不会补写不在场的人。</p>
+      <p className="group-chat__rule">{t("群聊只可邀请此刻确实在")}{venue.locationName} {t("的嘉宾；不会补写不在场的人。")}</p>
     </section>
   </div>
 }
@@ -1473,11 +1480,11 @@ function Cinematic({ src, title, identityCards, identityTimeline, onDone }: { sr
     <div className="cinematic-overlay" role="dialog" aria-modal="true" aria-label={title} data-playback-mode="first-pass-autoclose">
       <video ref={videoRef} src={src} autoPlay muted={playback.muted} playsInline onCanPlay={() => setReady(true)} onTimeUpdate={event => setCurrentTime(event.currentTarget.currentTime)} onEnded={onDone} onError={onDone} />
       <div className="cinematic-grade" />
-      {ready && !!identityCards?.length && <SceneIdentitySequence cards={identityCards} sceneKey={src} timeline={identityTimeline} currentTime={currentTime} context="本幕嘉宾" className="scene-identity-plate--cinematic" />}
+      {ready && !!identityCards?.length && <SceneIdentitySequence cards={identityCards} sceneKey={src} timeline={identityTimeline} currentTime={currentTime} context={t("本幕嘉宾")} className="scene-identity-plate--cinematic" />}
       <div className={`cinematic-title ${showTitle ? 'show' : ''}`}><span>HEART JOURNEY · STORY EVENT</span><b>{title}</b></div>
       <div className="cinematic-controls">
-        <button type="button" className={playback.needsGesture ? 'audio-attention' : ''} onClick={playback.toggleSound} aria-label={playback.muted ? '开启视频声音' : '关闭视频声音'} aria-pressed={!playback.muted}><span aria-hidden="true"><Icon name={playback.muted ? 'volume-off' : 'volume-on'} tone="rose" /></span>{playback.soundLabel}</button>
-        <button type="button" onClick={onDone}>跳过<Icon name="arrow-right" size={16} /></button>
+        <button type="button" className={playback.needsGesture ? 'audio-attention' : ''} onClick={playback.toggleSound} aria-label={playback.muted ? t("开启视频声音") : t("关闭视频声音")} aria-pressed={!playback.muted}><span aria-hidden="true"><Icon name={playback.muted ? 'volume-off' : 'volume-on'} tone="rose" /></span>{playback.soundLabel}</button>
+        <button type="button" onClick={onDone}>{t("跳过")}<Icon name="arrow-right" size={16} /></button>
       </div>
     </div>
   )
@@ -1485,8 +1492,8 @@ function Cinematic({ src, title, identityCards, identityTimeline, onDone }: { sr
 
 function ReceiptToast({ receipt }: { receipt: Receipt }) {
   const patchCount = Object.keys(receipt.patch || {}).length
-  const title = receipt.eventActivation ? `事件激活 · ${receipt.eventActivation.label}` : receipt.kind === 'agent-turn' ? `态度更新 · ${ATTITUDE_LABELS[receipt.attitude || ''] || receipt.attitude}` : receipt.kind === 'story-event' ? `新主任务 · ${receipt.mission?.title || receipt.title}` : receipt.kind === 'story-director-wait' ? '导演判断 · 继续积累证据' : receipt.kind === 'story-mission-resolution' ? '主任务结果已写入' : '选择已写入故事'
-  const detail = receipt.eventActivation?.text || receipt.mission?.prompt || receipt.playerMissionPrompt || receipt.publicReason || (patchCount ? `${patchCount} 项关系参数已提交` : '剧情状态已提交')
+  const title = receipt.eventActivation ? t("事件激活 · {0}", receipt.eventActivation.label) : receipt.kind === 'agent-turn' ? t("态度更新 · {0}", ATTITUDE_LABELS[receipt.attitude || ''] || receipt.attitude) : receipt.kind === 'story-event' ? t("新主任务 · {0}", receipt.mission?.title || receipt.title) : receipt.kind === 'story-director-wait' ? t("导演判断 · 继续积累证据") : receipt.kind === 'story-mission-resolution' ? t("主任务结果已写入") : t("选择已写入故事")
+  const detail = receipt.eventActivation?.text || receipt.mission?.prompt || receipt.playerMissionPrompt || receipt.publicReason || (patchCount ? t("{0} 项关系参数已提交", patchCount) : t("剧情状态已提交"))
   return <div className="receipt-toast"><HeartMark small /><div><b>{title}</b><span>{detail}</span></div></div>
 }
 
@@ -1497,24 +1504,24 @@ function DirectorMission({ mission, characters, busy, onResolve }: { mission: St
       <div className="director-mission__label"><span>MAIN QUEST</span><i>{mission.deadline}</i></div>
       <h2>{mission.title}</h2>
       <p>{mission.bridgeText}</p>
-      {mission.sceneSetup && <div className="director-mission__setup"><b>现场发生了什么</b><span>{mission.sceneSetup}</span></div>}
-      {mission.reversalBeat && <div className="director-mission__reversal"><b>意外变化</b><span>{mission.reversalBeat}</span>{mission.characterInsight && <small>{mission.characterInsight}</small>}</div>}
-      <div className="director-mission__objective"><b>现在去做</b><span>{mission.prompt}</span></div>
-      {!!mission.availableStrategies?.length && <div className="director-mission__strategies"><b>你可采用的策略</b>{mission.availableStrategies.map(item => <span key={item}>· {item}</span>)}</div>}
-      <div className="director-mission__meta"><span>{names || '心动小屋'}</span><small>完成证据：{mission.successEvidence}</small></div>
+      {mission.sceneSetup && <div className="director-mission__setup"><b>{t("现场发生了什么")}</b><span>{mission.sceneSetup}</span></div>}
+      {mission.reversalBeat && <div className="director-mission__reversal"><b>{t("意外变化")}</b><span>{mission.reversalBeat}</span>{mission.characterInsight && <small>{mission.characterInsight}</small>}</div>}
+      <div className="director-mission__objective"><b>{t("现在去做")}</b><span>{mission.prompt}</span></div>
+      {!!mission.availableStrategies?.length && <div className="director-mission__strategies"><b>{t("你可采用的策略")}</b>{mission.availableStrategies.map(item => <span key={item}>· {item}</span>)}</div>}
+      <div className="director-mission__meta"><span>{names || t("心动小屋")}</span><small>{t("完成证据：")}{mission.successEvidence}</small></div>
       <div className="director-mission__actions">
-        <button disabled={busy} onClick={() => onResolve('completed')}>我已完成</button>
-        <button disabled={busy} onClick={() => onResolve('declined')}>这次不参加</button>
+        <button disabled={busy} onClick={() => onResolve('completed')}>{t("我已完成")}</button>
+        <button disabled={busy} onClick={() => onResolve('declined')}>{t("这次不参加")}</button>
       </div>
-      <small className="director-mission__exit">退出路径：{mission.exit}</small>
+      <small className="director-mission__exit">{t("退出路径：")}{mission.exit}</small>
     </section>
   )
 }
 
 function GameBrief({ brief }: { brief: NonNullable<StoryNode['gameBrief']> }) {
   return <section className="game-brief">
-    <div className="game-brief__title"><span>本轮游戏</span><h2>{brief.name}</h2></div>
-    <dl><div><dt>怎么玩</dt><dd>{brief.format}</dd></div><div><dt>怎样算赢</dt><dd>{brief.winCondition}</dd></div></dl>
+    <div className="game-brief__title"><span>{t("本轮游戏")}</span><h2>{brief.name}</h2></div>
+    <dl><div><dt>{t("怎么玩")}</dt><dd>{brief.format}</dd></div><div><dt>{t("怎样算赢")}</dt><dd>{brief.winCondition}</dd></div></dl>
   </section>
 }
 
@@ -1577,7 +1584,7 @@ function resolveSceneMedia(view: View, guidedCharacterId?: string | null) {
     fallbackSrc: perspectiveFallbackSrc,
     fallbackPoster: perspectiveFallbackPoster,
     assetId: `CHAR-${guidedCharacter.id}-guided-scene`,
-    cue: node.mediaCue || node.action || `${guidedCharacter.name}停下手边的事，正在等你开口`,
+    cue: node.mediaCue || node.action || t("{0}停下手边的事，正在等你开口", guidedCharacter.name),
     identityCards: [identityCardFromCharacter(guidedCharacter)],
   }
   if (node.cinematic) return {
@@ -1621,7 +1628,7 @@ function Game({ view, onView, onRestart, llmProviders, llmProvider, onLlmProvide
   const [generationNotice, setGenerationNotice] = useState('')
   const [receipt, setReceipt] = useState<Receipt | null>(null)
   const [cinematic, setCinematic] = useState<string | null>(node.cinematic || null)
-  const [cinematicTitle, setCinematicTitle] = useState(node.title || '新的故事开始')
+  const [cinematicTitle, setCinematicTitle] = useState(node.title || t("新的故事开始"))
   const [cinematicPreviewedSrc, setCinematicPreviewedSrc] = useState<string | null>(null)
   const autoOpenedChatRef = useRef<string | null>(null)
   const perspectiveId = snapshot.player.perspectiveCharacterId || characters.find(character => character.isPlayerPerspective)?.id
@@ -1709,9 +1716,9 @@ function Game({ view, onView, onRestart, llmProviders, llmProvider, onLlmProvide
       setReceipt(result.receipt); setTimeout(() => setReceipt(null), 3300)
       onView(result)
       if (result.generationSource === 'engine-fallback') {
-        setGenerationNotice('所选模型本段未通过剧情合同，已使用安全台本；你的选择仍已正常保存。')
+        setGenerationNotice(t("所选模型本段未通过剧情合同，已使用安全台本；你的选择仍已正常保存。"))
       }
-      if (result.node.cinematic) { setCinematicPreviewedSrc(null); setCinematicTitle(result.node.title || '新的故事开始'); setCinematic(result.node.cinematic) }
+      if (result.node.cinematic) { setCinematicPreviewedSrc(null); setCinematicTitle(result.node.title || t("新的故事开始")); setCinematic(result.node.cinematic) }
     } catch (reason) { setError((reason as Error).message) }
     finally { setBusy(false) }
   }
@@ -1751,7 +1758,7 @@ function Game({ view, onView, onRestart, llmProviders, llmProvider, onLlmProvide
       setReceipt(result.receipt); setTimeout(() => setReceipt(null), 4300); onView(result)
       if (result.receipt.kind === 'story-event' && result.receipt.mission?.media?.src) {
         setCinematicPreviewedSrc(null)
-        setCinematicTitle(result.receipt.mission.title || result.receipt.title || '新的主任务')
+        setCinematicTitle(result.receipt.mission.title || result.receipt.title || t("新的主任务"))
         setCinematic(result.receipt.mission.media.src)
       }
     } catch (reason) { setError((reason as Error).message) }
@@ -1763,7 +1770,7 @@ function Game({ view, onView, onRestart, llmProviders, llmProvider, onLlmProvide
     setBusy(true); setError('')
     try {
       const result = await api<View & { receipt: Receipt }>(`/api/runs/${snapshot.runId}/story-missions/${snapshot.storyMission.id}/resolve`, {
-        method: 'POST', body: JSON.stringify({ revision: snapshot.revision, outcome, evidence: outcome === 'completed' ? '玩家确认已完成当前可执行任务' : '玩家使用了事件模板提供的退出路径' })
+        method: 'POST', body: JSON.stringify({ revision: snapshot.revision, outcome, evidence: outcome === 'completed' ? t("玩家确认已完成当前可执行任务") : t("玩家使用了事件模板提供的退出路径") })
       })
       setReceipt(result.receipt); setTimeout(() => setReceipt(null), 3300); onView(result)
     } catch (reason) { setError((reason as Error).message) }
@@ -1785,10 +1792,11 @@ function Game({ view, onView, onRestart, llmProviders, llmProvider, onLlmProvide
   return (
     <main className="game-shell game-shell--immersive">
       <header className={`game-topbar ${llmProviders.length > 1 ? 'game-topbar--provider' : ''}`}>
-        <div><span>心动之旅</span><small>{node.chapter}</small></div>
+        <div><span>{t("心动之旅")}</span><small>{node.chapter}</small></div>
         <div className="game-progress"><i style={{ width: `${PROGRESS[snapshot.nodeId] || 0}%` }} /></div>
         <LlmProviderSwitch available={llmProviders} value={llmProvider} onChange={onLlmProvider} disabled={busy} />
-        <button className="signal-button" aria-label="关系状态"><HeartMark small /><span>{snapshot.flags.heat + snapshot.echoMemories.length}</span></button>
+        <LanguageSwitch disabled={busy} />
+        <button className="signal-button" aria-label={t("关系状态")}><HeartMark small /><span>{snapshot.flags.heat + snapshot.echoMemories.length}</span></button>
       </header>
       <section className="scene-stage">
         <SceneMedia src={sceneMedia.src} poster={sceneMedia.poster} fallbackSrc={sceneMedia.fallbackSrc} fallbackPoster={sceneMedia.fallbackPoster} assetId={sceneMedia.assetId} cue={sceneMedia.cue} active={!chatCharacter && !groupVenue && !cinematic} firstPassConsumed={cinematicPreviewedSrc === sceneMedia.src} onTimeUpdate={setScenePlaybackTime} />
@@ -1799,28 +1807,28 @@ function Game({ view, onView, onRestart, llmProviders, llmProvider, onLlmProvide
           sceneKey={sceneIdentityKey}
           timeline={authoredIdentityTimeline}
           currentTime={scenePlaybackTime}
-          context={authoredIdentityCards.length || activeCharacter ? '嘉宾登场' : '你的视角'}
+          context={authoredIdentityCards.length || activeCharacter ? t("嘉宾登场") : t("你的视角")}
         />}
       </section>
       <div className="story-overlay-zone">
       <section className={`story-card story-card--${storyOverlayPhase}`} data-story-phase={storyOverlayPhase}>
         {storyOverlayPhase !== 'interaction' && <div className="story-narration-layer" data-story-layer="narration">
           <div className="story-card__chapter"><span>{node.speaker}</span><i /></div>
-          <button className="story-narration" type="button" onClick={typewriter.reveal} aria-label={`${node.title}。第${typewriter.beatIndex + 1}段，共${typewriter.beatCount}段。${typewriter.text}。${typewriter.complete ? '轻触继续。' : '轻触补全本段。'}`}>
+          <button className="story-narration" type="button" onClick={typewriter.reveal} aria-label={t("{0}。第{1}段，共{2}段。{3}。{4}", node.title, typewriter.beatIndex + 1, typewriter.beatCount, typewriter.text, typewriter.complete ? t("轻触继续。") : t("轻触补全本段。"))}>
             <h1>{node.title}</h1>
             <p data-beat={`${typewriter.beatIndex + 1}/${typewriter.beatCount}`}>{typewriter.text}<i className={typewriter.complete ? 'typewriter-cursor complete' : 'typewriter-cursor'} aria-hidden="true" /></p>
-            <small className="story-continue-hint">{!typewriter.complete ? `轻触补全本段 · ${typewriter.beatIndex + 1}/${typewriter.beatCount}` : typewriter.isLastBeat ? '再轻触一次，进入选择' : `轻触继续下一段 · ${typewriter.beatIndex + 1}/${typewriter.beatCount}`}</small>
+            <small className="story-continue-hint">{!typewriter.complete ? t("轻触补全本段 · {0}/{1}", typewriter.beatIndex + 1, typewriter.beatCount) : typewriter.isLastBeat ? t("再轻触一次，进入选择") : t("轻触继续下一段 · {0}/{1}", typewriter.beatIndex + 1, typewriter.beatCount)}</small>
           </button>
         </div>}
         {storyOverlayPhase === 'interaction' && <div className="story-reveal" data-story-layer="interaction">
           {snapshot.nodeId === 'callback' && <HeartInboxPhone snapshot={snapshot} characters={characters} />}
           {node.gameBrief && <GameBrief brief={node.gameBrief} />}
-          {snapshot.storyMission ? <DirectorMission mission={snapshot.storyMission} characters={characters} busy={busy} onResolve={resolveMission} /> : directorAvailable && memoriesDone && <button className="director-trigger" disabled={busy} onClick={directStory}><span><b>让剧情导演读取此刻的关系证据</b><small>从已研究的恋综事件库中激活下一项主任务</small></span><i>{busy ? '…' : <Icon name="arrow-up-right" size={18} />}</i></button>}
+          {snapshot.storyMission ? <DirectorMission mission={snapshot.storyMission} characters={characters} busy={busy} onResolve={resolveMission} /> : directorAvailable && memoriesDone && <button className="director-trigger" disabled={busy} onClick={directStory}><span><b>{t("让剧情导演读取此刻的关系证据")}</b><small>{t("从已研究的恋综事件库中激活下一项主任务")}</small></span><i>{busy ? '…' : <Icon name="arrow-up-right" size={18} />}</i></button>}
           {(node.requiresMemory || node.requiresGuidedInteraction) && <div className={`link-proof ${(node.requiresGuidedInteraction ? requiredInteractionDone : eventDone) ? 'done' : ''} ${guidedCharacterId && !requiredInteractionDone ? 'guided' : ''}`}>
-            <span>{node.requiresGuidedInteraction && requiredInteractionDone ? <Icon name="check" size={17} /> : eventDone ? <Icon name="check" size={17} /> : interactionHasMemory ? '02' : '01'}</span><div><b>{node.requiresGuidedInteraction && requiredInteractionDone ? '破冰对话已完成，现在轮到你决定怎样邀请' : eventDone ? '专属事件已经进入正片' : interactionHasMemory ? '继续交流，让对方作出一个具体选择' : guidedCharacterId ? `剧情正在等你与${characters.find(character => character.id === guidedCharacterId)?.name || '指定嘉宾'}开口` : '先完成一次 1 对 1 交流'}</b><small>{node.requiresGuidedInteraction && requiredInteractionDone ? '对方已经记住你们的第一次真实来回' : eventDone ? snapshot.eventLedger[snapshot.eventLedger.length - 1]?.label : interactionHasMemory ? '角色会依据人物卡决定是否交出线索或邀约' : guidedCharacterId ? '下方对应头像已点亮“1”，先从自我介绍和寒暄开始' : '从一声招呼开始，不用一上来就谈任务'}</small></div>
+            <span>{node.requiresGuidedInteraction && requiredInteractionDone ? <Icon name="check" size={17} /> : eventDone ? <Icon name="check" size={17} /> : interactionHasMemory ? '02' : '01'}</span><div><b>{node.requiresGuidedInteraction && requiredInteractionDone ? t("破冰对话已完成，现在轮到你决定怎样邀请") : eventDone ? t("专属事件已经进入正片") : interactionHasMemory ? t("继续交流，让对方作出一个具体选择") : guidedCharacterId ? t("剧情正在等你与{0}开口", characters.find(character => character.id === guidedCharacterId)?.name || t("指定嘉宾")) : t("先完成一次 1 对 1 交流")}</b><small>{node.requiresGuidedInteraction && requiredInteractionDone ? t("对方已经记住你们的第一次真实来回") : eventDone ? snapshot.eventLedger[snapshot.eventLedger.length - 1]?.label : interactionHasMemory ? t("角色会依据人物卡决定是否交出线索或邀约") : guidedCharacterId ? t("下方对应头像已点亮“1”，先从自我介绍和寒暄开始") : t("从一声招呼开始，不用一上来就谈任务")}</small></div>
           </div>}
-          {!!availableChoices.length && <section className={`choice-section ${node.characterChoice ? 'choice-section--cast' : ''}`} aria-label="剧情选择">
-            <div className="choice-section__heading"><span>{node.characterChoice ? '今晚，你想把心动短信发给谁？' : '这一刻，你准备怎么做？'}</span><small>你的选择会改变接下来的相处</small></div>
+          {!!availableChoices.length && <section className={`choice-section ${node.characterChoice ? 'choice-section--cast' : ''}`} aria-label={t("剧情选择")}>
+            <div className="choice-section__heading"><span>{node.characterChoice ? t("今晚，你想把心动短信发给谁？") : t("这一刻，你准备怎么做？")}</span><small>{t("你的选择会改变接下来的相处")}</small></div>
             {node.characterChoice ? <HeartMessageComposer choices={availableChoices} characters={characters} busy={busy} disabled={(!!node.requiresGuidedInteraction && !requiredInteractionDone) || (!!node.requiresMemory && !memoriesDone) || (!!node.requiresEvent && !eventDone)} onSend={choose} /> : <>
             <div className={`choice-stack ${snapshot.nodeId === 'icebreaker-choice' ? 'choice-stack--icebreaker' : ''} ${snapshot.nodeId !== 'icebreaker-choice' && availableChoices.every(choice => choice.characterId || choice.targetCharacterId) ? 'choice-stack--character-grid' : ''}`}>
               {availableChoices.map((choice, index) => {
@@ -1829,13 +1837,13 @@ function Game({ view, onView, onRestart, llmProviders, llmProvider, onLlmProvide
                 return (
                   <button key={choice.id} className={character && snapshot.nodeId !== 'icebreaker-choice' ? 'choice-button--character' : undefined} disabled={busy || (!!node.requiresGuidedInteraction && !requiredInteractionDone) || (!!node.requiresMemory && !memoriesDone) || (!!node.requiresEvent && !eventDone)} onClick={() => choose(choice)} style={character ? { '--accent': character.accent } as React.CSSProperties : undefined}>
                     {snapshot.nodeId === 'icebreaker-choice' && character ? <>
-                      <span className="icebreaker-card__top"><em>三分钟生活观察卡</em><i>{String(index + 1).padStart(2, '0')}</i></span>
-                      <span className="icebreaker-card__person"><img src={character.portrait} alt={`${character.name}头像`} /><span><b>{character.name}<em>{character.mbti}</em></b><small>{publicOccupation(character)} · {character.tagline}</small></span></span>
-                      <span className="icebreaker-card__action"><em>你要做什么</em><b>{choice.label}</b></span>
-                      <span className="icebreaker-card__question"><em>三分钟内，问到这件小事</em><span>{choice.hint || character.independentInterest}</span></span>
+                      <span className="icebreaker-card__top"><em>{t("三分钟生活观察卡")}</em><i>{String(index + 1).padStart(2, '0')}</i></span>
+                      <span className="icebreaker-card__person"><img src={character.portrait} alt={t("{0}头像", character.name)} /><span><b>{character.name}<em>{character.mbti}</em></b><small>{publicOccupation(character)} · {character.tagline}</small></span></span>
+                      <span className="icebreaker-card__action"><em>{t("你要做什么")}</em><b>{choice.label}</b></span>
+                      <span className="icebreaker-card__question"><em>{t("三分钟内，问到这件小事")}</em><span>{choice.hint || character.independentInterest}</span></span>
                       <i className="icebreaker-card__arrow"><Icon name="arrow-right" size={18} /></i>
                     </> : character ? <>
-                      <img className="choice-character-photo" src={character.portrait} alt={`${character.name}头像`} />
+                      <img className="choice-character-photo" src={character.portrait} alt={t("{0}头像", character.name)} />
                       <span className="choice-copy choice-copy--character">
                         <span className="choice-character-identity"><b>{character.name}</b><em>{publicOccupation(character)} · {character.mbti}</em></span>
                         <small className="choice-character-personality">{character.tagline}</small>
@@ -1854,7 +1862,7 @@ function Game({ view, onView, onRestart, llmProviders, llmProvider, onLlmProvide
             <FreeChoiceComposer choices={availableChoices} busy={busy} disabled={(!!node.requiresGuidedInteraction && !requiredInteractionDone) || (!!node.requiresMemory && !memoriesDone) || (!!node.requiresEvent && !eventDone)} onSend={choose} />
             </>}
           </section>}
-          {node.isEnding && <div className="ending-proof"><span>首个联通闭环已完成</span><p>你的文字选择进入角色记忆，并在剧情回声中触发了新的表达。</p><button disabled={busy} onClick={restart}>{busy ? '正在重启心动信号…' : '重新开始一段旅程'}</button></div>}
+          {node.isEnding && <div className="ending-proof"><span>{t("首个联通闭环已完成")}</span><p>{t("你的文字选择进入角色记忆，并在剧情回声中触发了新的表达。")}</p><button disabled={busy} onClick={restart}>{busy ? t("正在重启心动信号…") : t("重新开始一段旅程")}</button></div>}
           {generationNotice && <p className="generation-note" role="status">{generationNotice}</p>}
           {error && <p className="error-note">{error}</p>}
         </div>}
@@ -1928,11 +1936,11 @@ export default function App() {
     const controller = new AbortController()
     const timeout = window.setTimeout(() => controller.abort(), 25_000)
     try {
-      setView(await api<View>('/api/runs', { method: 'POST', body: JSON.stringify(customCharacterId ? { mbti, customCharacterId } : { mbti, perspectiveCharacterId }), signal: controller.signal }))
+      setView(await api<View>('/api/runs', { method: 'POST', body: JSON.stringify(customCharacterId ? { mbti, customCharacterId, language: gameLanguage } : { mbti, perspectiveCharacterId, language: gameLanguage }), signal: controller.signal }))
     } catch (error) {
       const requestError = error as Error
       const message = requestError.name === 'AbortError'
-        ? '开启等待超过 25 秒，连接已停止。请检查网络后再试；刚才的按钮只提交了一次。'
+        ? t("开启等待超过 25 秒，连接已停止。请检查网络后再试；刚才的按钮只提交了一次。")
         : requestError.message
       if (view) setAuthError(message)
       else setStartError(message)

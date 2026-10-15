@@ -8,6 +8,9 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
+from backend.localization import character_name, localize
+from backend.language_support import ENGLISH_DAY1_SYSTEM, has_background, has_join_reason, has_relationship_reason, is_english, require_english
+
 from backend.agent_prompt import runtime_character_card, select_runtime_few_shots
 from backend.game_content import (
     CHARACTER_CARD_MAP,
@@ -118,7 +121,7 @@ def _introduction_anchors(perspective_id: str) -> tuple[str, ...]:
         return INTRO_BACKGROUND_ANCHORS[perspective_id]
     facts = CHARACTER_CARD_MAP[perspective_id].get("sourceProfile", {}).get("facts", {})
     occupation = str(facts.get("occupation") or "")
-    return (occupation,) if occupation and "未公开" not in occupation else ("平时", "日常", "喜欢")
+    return (occupation,) if occupation and "未公开" not in occupation else ("平时", "日常", "喜欢", "everyday")
 
 
 def _safe_background(perspective_id: str) -> str:
@@ -278,21 +281,42 @@ speakerId 只能填写以下一个英文字符串：narrator、program，或同�
         "\n\n确定性剧情骨架：\n" + json.dumps(_story_skeleton(), ensure_ascii=False) +
         "\n\n输出合同：\n" + json.dumps(output_contract, ensure_ascii=False)
     )
+    if is_english(state):
+        output_contract = _english_day1_contract(output_contract)
+        prompt = json.dumps({"protagonistCard": localize(protagonist_for_prompt, "en"), "publicCast": localize(public_cast, "en"), "ensembleContext": localize(_ensemble_context(perspective_id, cast_ids), "en"), "deterministicStory": localize(_story_skeleton(), "en"), "contract": output_contract}, ensure_ascii=False)
+        return [{"role": "system", "content": ENGLISH_DAY1_SYSTEM}, {"role": "user", "content": prompt}]
     return [{"role": "system", "content": system}, {"role": "user", "content": prompt}]
 
 
-def _validate_surface_text(value: Any, field: str, minimum: int, maximum: int) -> str:
+def _english_day1_contract(contract: dict[str, Any]) -> dict[str, Any]:
+    """Keep the response shape while replacing language-specific size guidance."""
+    value = localize(contract, "en")
+    node_contracts = value.get("nodes", {}) or {"node": value.get("node", {})}
+    for node in node_contracts.values():
+        node.update(title="4-90 English characters", text="30-720 English characters describing scene, cause and next action", textBeats="2-4 short English paragraphs, each 8-240 characters; no new facts", action="4-200 English characters of visible action")
+        for choice in node.get("choices", []):
+            choice.update(label="6-600 English characters for introductions; 6-220 otherwise", hint="4-180 English characters of the present tradeoff")
+    return value
+
+
+def _validate_surface_text(value: Any, field: str, minimum: int, maximum: int, *, english: bool = False) -> str:
     text = str(value or "").strip()
     if not minimum <= len(text) <= maximum:
         raise ValueError(f"{field}长度不符合合同")
-    if any(term.lower() in text.lower() for term in FORBIDDEN_SURFACE_TERMS):
+    if english:
+        allowed_names = tuple(card["names"]["primary"] for card in CHARACTER_CARD_MAP.values())
+        require_english(text, names=allowed_names)
+        forbidden = bool(re.search(r"\b(?:DeepSeek|Dots|Agent|API|relationship score|state parameters|trigger an event|complete the main quest|keys?|clues?)\b", text, re.I))
+    else:
+        forbidden = any(term.lower() in text.lower() for term in FORBIDDEN_SURFACE_TERMS)
+    if forbidden:
         raise ValueError(f"{field}暴露后台或旧钥匙任务")
     if any(term in text for term in ("童年创伤", "心理阴影", "抑郁症", "焦虑症", "前任留下")):
         raise ValueError(f"{field}编造了人物卡外的创伤或诊断")
     return text
 
 
-def _normalize_text_beats(value: Any, text: str, field: str) -> list[str]:
+def _normalize_text_beats(value: Any, text: str, field: str, *, english: bool = False) -> list[str]:
     if value in (None, ""):
         beats = split_story_beats(text)
     elif isinstance(value, list):
@@ -302,23 +326,23 @@ def _normalize_text_beats(value: Any, text: str, field: str) -> list[str]:
     if not 1 <= len(beats) <= 4:
         raise ValueError(f"{field}必须包含1-4条短beat")
     for index, beat in enumerate(beats):
-        _validate_surface_text(beat, f"{field}[{index}]", 8, 80)
-    if len(beats) == 1 and len(text) > 70:
+        _validate_surface_text(beat, f"{field}[{index}]", 8, 240 if english else 80, english=english)
+    if len(beats) == 1 and len(text) > (240 if english else 70):
         raise ValueError(f"{field}没有把长旁白拆成阅读节奏")
     return beats
 
 
-def _validate_introduction_choice(perspective_id: str, choice_id: str, label: str) -> None:
+def _validate_introduction_choice(perspective_id: str, choice_id: str, label: str, *, english: bool = False) -> None:
     card = CHARACTER_CARD_MAP[perspective_id]
-    name = card["names"]["primary"]
+    name = character_name(card, "en" if english else "zh-CN")
     if name not in label:
         raise ValueError(f"{choice_id} 没有直接说出主角姓名")
     if card["mbti"] not in label:
         raise ValueError(f"{choice_id} 没有清楚说出 MBTI 或性格")
-    if not any(anchor in label for anchor in _introduction_anchors(perspective_id)):
+    if not has_background(label, _introduction_anchors(perspective_id), english=english):
         raise ValueError(f"{choice_id} 没有说出人物卡确认的工作或日常背景")
-    self_intro = label.split("？", 1)[0]
-    if not any(pattern.search(self_intro) for pattern in INTRO_REASON_PATTERNS):
+    self_intro = re.split(r"[?？]", label, maxsplit=1)[0]
+    if not (has_join_reason(self_intro) and has_relationship_reason(self_intro) if english else any(pattern.search(self_intro) for pattern in INTRO_REASON_PATTERNS)):
         raise ValueError(f"{choice_id} 没有说清参加节目的来意")
     if any(term in label for term in INTRO_RIDDLE_TERMS):
         raise ValueError(f"{choice_id} 使用了谜语或抽象试探")
@@ -345,8 +369,9 @@ def validate_day1_script(snapshot: dict[str, Any], payload: dict[str, Any]) -> d
     state = migrate_snapshot(snapshot)
     if state is None:
         raise ValueError("剧情状态不存在")
+    english = is_english(state)
     perspective_id = state["player"]["perspectiveCharacterId"]
-    perspective_name = CHARACTER_MAP[perspective_id]["name"]
+    perspective_name = character_name(CHARACTER_MAP[perspective_id], "en" if english else "zh-CN")
     raw_nodes = payload.get("nodes")
     if not isinstance(raw_nodes, dict) or set(raw_nodes) != set(DAY1_SCRIPT_NODE_IDS):
         raise ValueError("模型台本节点与确定性骨架不一致")
@@ -357,10 +382,10 @@ def validate_day1_script(snapshot: dict[str, Any], payload: dict[str, Any]) -> d
         raw = raw_nodes.get(node_id)
         if not isinstance(raw, dict):
             raise ValueError(f"{node_id} 台本不是对象")
-        title = _validate_surface_text(raw.get("title"), f"{node_id}.title", 4, 36)
-        text = _validate_surface_text(raw.get("text"), f"{node_id}.text", 30, 180)
-        text_beats = _normalize_text_beats(raw.get("textBeats"), text, f"{node_id}.textBeats")
-        action = _validate_surface_text(raw.get("action"), f"{node_id}.action", 4, 80)
+        title = _validate_surface_text(raw.get("title"), f"{node_id}.title", 4, 90 if english else 36, english=english)
+        text = _validate_surface_text(raw.get("text"), f"{node_id}.text", 30, 720 if english else 180, english=english)
+        text_beats = _normalize_text_beats(raw.get("textBeats"), text, f"{node_id}.textBeats", english=english)
+        action = _validate_surface_text(raw.get("action"), f"{node_id}.action", 4, 200 if english else 80, english=english)
         narration_copy = title + text + "".join(text_beats) + action
         if perspective_name in narration_copy:
             raise ValueError(f"{node_id} 把主角写成了第三人称；旁白与动作必须使用‘你’")
@@ -381,12 +406,14 @@ def validate_day1_script(snapshot: dict[str, Any], payload: dict[str, Any]) -> d
         for blueprint in blueprint_choices:
             choice = by_id[blueprint["id"]]
             label_maximum = (320 if state.get("customPlayerCard") else 120) if node_id == "introductions" else 52
-            label = _validate_surface_text(choice.get("label"), f"{node_id}.{blueprint['id']}.label", 6, label_maximum)
-            hint = _validate_surface_text(choice.get("hint"), f"{node_id}.{blueprint['id']}.hint", 4, 52)
+            if english:
+                label_maximum = 900 if state.get("customPlayerCard") and node_id == "introductions" else (600 if node_id == "introductions" else 220)
+            label = _validate_surface_text(choice.get("label"), f"{node_id}.{blueprint['id']}.label", 6, label_maximum, english=english)
+            hint = _validate_surface_text(choice.get("hint"), f"{node_id}.{blueprint['id']}.hint", 4, 180 if english else 52, english=english)
             if re.match(r"^[“\"']?(?:他|她)(?:选择|会|把|说|承认|决定)", hint):
                 raise ValueError(f"{node_id}.{blueprint['id']}.hint 把主角写成了第三人称")
             if node_id == "introductions":
-                _validate_introduction_choice(perspective_id, blueprint["id"], label)
+                _validate_introduction_choice(perspective_id, blueprint["id"], label, english=english)
             else:
                 non_intro_copy = re.sub(
                     rf"(?:我叫|我是|说自己叫){re.escape(perspective_name)}", "", label + hint,
@@ -410,11 +437,13 @@ def validate_day1_script(snapshot: dict[str, Any], payload: dict[str, Any]) -> d
                         if str(alias).strip()
                     ),
                 }
+                if english:
+                    target_names = {character_name(target_card, "en"), *(localize(list(target_names), "en"))}
                 if not any(name and name in label for name in target_names):
                     raise ValueError(f"{node_id}.{blueprint['id']} 只给了人物目标，没有在选项中写出姓名和行动")
-                if node_id == "cast-first-impressions" and not any(
+                if node_id == "cast-first-impressions" and not (bool(re.search(r"\b(?:said|heard|introduced|introduction|quiet|curious|remember|later|dinner|chat|again)\b", label + hint, re.I)) if english else any(
                     marker in label + hint for marker in ("介绍", "说", "听", "接话", "认真", "安静", "照顾", "好奇", "记住", "想再", "之后", "晚餐", "三分钟")
-                ):
+                )):
                     raise ValueError("第一印象选择没有说明刚才听见的依据或以后想验证的点")
             elif target_id not in (None, ""):
                 raise ValueError(f"{node_id} 不允许模型指定人物目标")
@@ -428,7 +457,7 @@ def validate_day1_script(snapshot: dict[str, Any], payload: dict[str, Any]) -> d
             introduction_copy = title + text + action + "".join(item["label"] + item["hint"] for item in choices)
             for character_id in cast_ids:
                 character = CHARACTER_MAP[character_id]
-                if character_id != perspective_id and character["name"] in introduction_copy:
+                if character_id != perspective_id and character_name(character, "en" if english else "zh-CN") in introduction_copy:
                     raise ValueError("自我介绍节点编造了另一位嘉宾刚刚做过的事")
             for left_index, left in enumerate(choices):
                 for right in choices[left_index + 1:]:
@@ -436,9 +465,9 @@ def validate_day1_script(snapshot: dict[str, Any], payload: dict[str, Any]) -> d
                         raise ValueError("三种自我介绍只是重复同一段话，没有形成真人可感知的三种说法")
         if node_id == "cast-first-impressions":
             transition_copy = title + text + "".join(text_beats) + action
-            if not any(marker in transition_copy for marker in ("其余七", "另外七", "七位嘉宾", "最后一个名字", "所有人都介绍")):
+            if not (bool(re.search(r"\b(?:other seven|seven other|all seven|everyone.{0,25}introduc)\b", transition_copy, re.I)) if english else any(marker in transition_copy for marker in ("其余七", "另外七", "七位嘉宾", "最后一个名字", "所有人都介绍"))):
                 raise ValueError("第一印象过渡没有明确听完其余七位嘉宾的介绍")
-            if not any(marker in transition_copy for marker in ("晚餐", "组队", "三分钟", "短信", "今晚", "之后", "后来")):
+            if not (bool(re.search(r"\b(?:dinner|team|three.minute|message|tonight|later)\b", transition_copy, re.I)) if english else any(marker in transition_copy for marker in ("晚餐", "组队", "三分钟", "短信", "今晚", "之后", "后来"))):
                 raise ValueError("第一印象过渡没有埋下可在后续事件验证的伏笔")
         normalized[node_id] = {
             "title": title, "text": text, "textBeats": text_beats,
@@ -574,6 +603,13 @@ choice id、intent、next、patch、节点顺序、目标规则和媒体全部�
             "safeActionFallback": str(blueprint.get("action") or "你停在当前场景里，准备做出下一步选择。"),
         },
     }
+    if is_english(state):
+        context = localize(context, "en")
+        context["playerIdentity"]["protagonistName"] = character_name(protagonist, "en")
+        context["currentLiteralContract"]["name"] = character_name(protagonist, "en")
+        context["currentLiteralContract"]["reasonMustAppearBeforeQuestion"] = ["I came here because", "I joined", "I'm here to"]
+        system = ENGLISH_DAY1_SYSTEM
+        contract = _english_day1_contract(contract)
     return [
         {"role": "system", "content": system},
         {"role": "user", "content": json.dumps({"context": context, "contract": contract}, ensure_ascii=False)},
@@ -586,6 +622,7 @@ def validate_day1_node_script(snapshot: dict[str, Any], node_id: str, payload: d
     state = migrate_snapshot(snapshot)
     if state is None or node_id not in NODES:
         raise ValueError("剧情节点不存在")
+    english = is_english(state)
     raw_node = payload.get("node") if isinstance(payload.get("node"), dict) else payload
     if not isinstance(raw_node, dict):
         raise ValueError("当前节点台本不是对象")
@@ -601,7 +638,7 @@ def validate_day1_node_script(snapshot: dict[str, Any], node_id: str, payload: d
         str(choice.get("label") or "") + str(choice.get("hint") or "")
         for choice in raw_node.get("choices", []) if isinstance(choice, dict)
     )
-    blueprint_copy = json.dumps(NODES[node_id], ensure_ascii=False)
+    blueprint_copy = json.dumps(localize(NODES[node_id], "en" if english else "zh-CN"), ensure_ascii=False)
     current_evidence = blueprint_copy + json.dumps({
         "choiceHistory": state.get("choiceHistory", []),
         "relevantMemories": state.get("echoMemories", []),
@@ -629,7 +666,9 @@ def validate_day1_node_script(snapshot: dict[str, Any], node_id: str, payload: d
             ("回来", "回到客厅"),
             ("点头", "补充", "确认", "算完成"),
         )
-        if any(not any(marker in visible_copy for marker in group) for group in required_rule_groups):
+        if english:
+            required_rule_groups = (("three cards", "three scene cards", "three location cards"), ("three minutes", "three-minute"), ("return", "come back", "back to the living room"), ("confirm", "nod", "add", "counts as"))
+        if any(not any(marker in (visible_copy.lower() if english else visible_copy) for marker in group) for group in required_rule_groups):
             raise ValueError("破冰规则没有说清三张卡、三分钟和回来后的完成条件")
     if node_id == "callback" and "收到" in visible_copy:
         raise ValueError("清晨回声不能假定主角昨晚一定收到短信")
@@ -640,13 +679,23 @@ def validate_day1_node_script(snapshot: dict[str, Any], node_id: str, payload: d
     for term in UNDECLARED_PROP_TERMS:
         if term in visible_copy and term not in current_evidence:
             raise ValueError(f"{node_id} 新增了当前现场未声明的具体物件：{term}")
+    if english:
+        props = ("blueprint", "mechanical lock", "potato", "carrot", "tomato", "apron", "kitchen knife", "voice recorder", "microphone", "sketchbook", "cutting board", "wind chime")
+        evidence = str(localize(current_evidence, "en")).lower()
+        for term in props:
+            if re.search(r"\b" + re.escape(term) + r"s?\b", visible_copy, re.I) and term not in evidence:
+                raise ValueError(f"{node_id} introduces an undeclared prop: {term}")
+        if node_id == "team-up" and re.search(r"just.{0,24}(?:finished|completed).{0,24}introductions", visible_copy, re.I):
+            raise ValueError("Dinner skips the already completed icebreaker and chat")
+        if node_id == "callback" and re.search(r"\b(?:you received|your received message)\b", visible_copy, re.I):
+            raise ValueError("Morning callback cannot assume the player received a message")
     exact_values = re.findall(r"\b\d{1,2}:\d{2}\b|[零一二三四五六七八九十\d]+人份", visible_copy)
     if any(value not in current_evidence for value in exact_values):
         raise ValueError(f"{node_id} 新增了骨架外的精确时间或人数")
     for duration in re.findall(r"(?:半|[零一二三四五六七八九十\d]+)(?:分钟|小时)", visible_copy):
         if duration not in current_evidence:
             raise ValueError(f"{node_id} 新增了骨架外的精确时长：{duration}")
-    package = build_fallback_script_flavor(state["player"]["perspectiveCharacterId"], active_cast_ids(state))
+    package = localize(build_fallback_script_flavor(state["player"]["perspectiveCharacterId"], active_cast_ids(state), state["language"]), state["language"])
     package["nodes"][node_id] = raw_node
     return validate_day1_script(state, {"nodes": package["nodes"]})["nodes"][node_id]
 
@@ -681,7 +730,8 @@ def install_day1_script(snapshot: dict[str, Any], payload: dict[str, Any] | None
     try:
         flavor = validate_day1_script(state, payload or {})
     except (TypeError, ValueError):
-        flavor = build_fallback_script_flavor(perspective_id, active_cast_ids(state))
+        flavor = localize(build_fallback_script_flavor(perspective_id, active_cast_ids(state), state["language"]), state["language"])
+    flavor["language"] = state["language"]
     next_state = deepcopy(state)
     next_state["scriptFlavor"] = flavor
     return next_state
@@ -741,6 +791,8 @@ def validate_cached_day1_script_package(snapshot: dict[str, Any], package: dict[
 
 @with_player_card
 def install_cached_day1_script(snapshot: dict[str, Any], path: Path | None = None) -> dict[str, Any] | None:
+    if is_english(snapshot):
+        return None
     cache_path = path or (ROOT / "content" / "day1_script_flavors.v1.json")
     try:
         package = json.loads(cache_path.read_text(encoding="utf-8"))

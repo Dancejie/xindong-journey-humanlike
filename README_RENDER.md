@@ -1,5 +1,13 @@
 # 心动之旅：GitHub + Render 公网部署
 
+## R12 中英双语版
+
+`4.3.0-bilingual-r12` 在现有完整版本上增加 English / 中文切换。英文直达入口为 `/?lang=en`；浏览器语言、已保存偏好和显式链接决定初次显示语言。32 位预设人物、16 种 MBTI、照片与资料创建自定义人物、已有视频、单局八人阵容和原有存档继续共用原来的规则。
+
+界面、人物资料、主线、选项、自由输入、私聊、群聊、心动短信、导演事件和自定义人物生成均支持英文。切换语言保留进度、关系与私有记忆，原始玩家输入、自定义姓名和原话证据不会被字典翻译。已有视频保留原声音轨；本轮没有生成英文配音或新视频，线上动态形象生成仍取决于原来的配置和预算。
+
+英文内容位于 `content/locales/en-*.json`，服务端采用 `X-Game-Language: en|zh-CN`，新存档显式保存 `language`。验收记录见 `qa/ENGLISH-R12.md`。
+
 这个仓库包含完整 React/FastAPI 版本、32 张人物卡（完整 16 种 MBTI，每型一男一女）、单局 8 人/4 男 4 女阵容、32 位真人静态身份图、32 位动态肖像、性别匹配与精确主角剧情事件视频、事件驱动剧情状态机，以及可切换 DeepSeek/Dots 的服务端角色 Agent。
 
 本文件只描述独立的“人味增强版”部署。原版 `Dancejie/xindong-journey-echo` 与 `xindong-journey-echo.onrender.com` 保持不变；两个服务共用账号现有的免费 PostgreSQL 实例，但人味增强版固定使用独立 schema `xindong_journey_humanlike`，不会读写原版表。可审计边界见 `INSTANCE_PROVENANCE.md`。

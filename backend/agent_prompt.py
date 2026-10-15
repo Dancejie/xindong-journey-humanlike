@@ -6,6 +6,9 @@ import re
 from copy import deepcopy
 from typing import Any
 
+from backend.localization import character_name, localize
+from backend.language_support import ENGLISH_CHARACTER_SYSTEM, ENGLISH_OPENING_SYSTEM, english_surface_checks, has_background, has_join_reason, has_relationship_reason, is_english, require_english
+
 
 ATTITUDES = ["warm", "curious", "guarded", "challenging", "vulnerable", "softened", "uncertain", "honest", "moved", "careful", "steady", "boundary"]
 
@@ -237,15 +240,15 @@ def _player_natural_expression_contract(
 
 
 def _validate_player_suggestion_surface(
-    suggestions: list[str], expression_contract: dict[str, Any], error_prefix: str,
+    suggestions: list[str], expression_contract: dict[str, Any], error_prefix: str, *, english: bool = False,
 ) -> None:
     marked = [text for text in suggestions if _contains_kaomoji(text)]
     maximum = int(expression_contract.get("kaomoji", {}).get("maximumAcrossThreeSuggestions") or 0)
     if len(marked) > maximum:
         raise ValueError(f"{error_prefix}颜文字使用过多或不符合当前人物与语境")
-    if any(len(re.findall(r"[\u4e00-\u9fff]", text)) < 4 for text in marked):
+    if any(len(re.findall(r"[A-Za-z]" if english else r"[\u4e00-\u9fff]", text)) < 4 for text in marked):
         raise ValueError(f"{error_prefix}不能用颜文字代替完整表达")
-    if any(re.search(r"\([^)]*[A-Za-z]{3,}[^)]*\)", text) for text in suggestions):
+    if not english and any(re.search(r"\([^)]*[A-Za-z]{3,}[^)]*\)", text) for text in suggestions):
         raise ValueError(f"{error_prefix}生成了损坏或夹杂英文的颜文字")
 
 
@@ -265,6 +268,18 @@ _FEW_SHOT_CUE_LEXICONS = {
     "cooperation": ("一起", "分工", "厨房", "晚餐", "组队", "帮忙", "任务", "商量"),
     "repair": ("道歉", "说错", "误会", "修复", "重新", "补救"),
 }
+_ENGLISH_FEW_SHOT_CUES = {
+    "opening": ("first", "arrived", "introduction", "hello", "meet"),
+    "support": ("support", "understand", "help", "care", "believe"),
+    "probe": ("why", "wonder", "curious", "explain", "question"),
+    "challenge": ("disagree", "challenge", "doubt", "prove", "win"),
+    "boundary": ("refuse", "boundary", "don't", "uncomfortable", "privacy", "consent", "pressure"),
+    "affection": ("like you", "love", "feelings", "confess", "date", "message"),
+    "cooperation": ("together", "split", "kitchen", "dinner", "team", "help", "prepare"),
+    "repair": ("sorry", "misunderstood", "repair", "apologize", "try again"),
+}
+for _cue, _words in _ENGLISH_FEW_SHOT_CUES.items():
+    _FEW_SHOT_CUE_LEXICONS[_cue] += _words
 
 
 def _without_source_text(value: Any) -> Any:
@@ -355,7 +370,7 @@ def runtime_character_card(card: dict[str, Any]) -> dict[str, Any]:
 def _cue_tags(text: str) -> list[str]:
     tags = []
     for cue, markers in _FEW_SHOT_CUE_LEXICONS.items():
-        cue_text = text
+        cue_text = text.lower()
         if cue == "affection":
             cue_text = cue_text.replace("不喜欢", "").replace("谈不上喜欢", "")
         if any(marker in cue_text for marker in markers):
@@ -604,7 +619,7 @@ def _confirmed_public_facts(card: dict) -> dict:
 def _resolved_player_card(snapshot: dict, supplied: dict | None) -> dict | None:
     if supplied is not None:
         return supplied
-    if snapshot.get("customPlayerCard"):
+    if snapshot.get("customPlayerCard") or is_english(snapshot):
         from backend.game_content import player_card_for
         return player_card_for(snapshot)
     return None
@@ -759,6 +774,25 @@ recentTurns 是“曾在何时、何地、和谁聊了什么”的事件记忆�
 	严格执行 playerVoiceForSuggestions.naturalExpressionContract：先像这个具体主角，再考虑性别这一层很弱的表面线索。女性主角的自然感来自主动性、细微反应、句子松紧和真实取舍，不等于撒娇、害羞、连续语气词或等待被选择。建议语正文不要自行键入或仿造颜文字；服务端会在 kaomoji.mayUseNow=true 时从人物卡 preferredExamples 中稳定添加最多一个。严肃、拒绝、边界、冲突和脆弱语境不会添加。
 	attitude、intentId、memory.kind 都必须各自输出一个标量字符串，绝不能输出数组、候选列表或说明对象；proposedEventId 只能是 null 或单个字符串。
 	只输出一个合法 JSON 对象，不要 Markdown，不要解释。"""
+    if is_english(snapshot):
+        context = localize(context, "en")
+        context["humanSpeechContract"]["language"] = "All dialogue, actions, memory prose and optional player suggestions use natural English."
+        context["firstIntroductionContract"].update({
+            "literalName": character_name(card, "en"),
+            "requiredOpeningPrefix": f"Hi, I'm {character_name(card, 'en')}, {card['mbti']}.",
+            "reasonMarkers": ["I came here because", "I joined", "I'm here to"],
+            "shape": "State name, MBTI, verified public background and a personal relationship reason in 2-3 natural sentences, then address the player's input.",
+        })
+        context["highRiskSpeechAct"]["asksWhyStayOrJoin"] = bool(re.search(r"why.{0,30}(?:join|come|came|stay|here)", message, re.I))
+        schema.update({
+            "dialogue": "40-700 English characters of original character speech; first conversation must use the literal requiredOpeningPrefix and verified background.",
+            "stageDirection": "At most 100 English characters of visible action.",
+            "publicReason": "At most 100 English characters; no hidden scores.",
+            "topicSummary": "4-80 English characters naming one new concrete topic.",
+            "suggestions": [{"type": kind, "text": "4-180 English characters spoken by the selected player; specific to this turn and character."} for kind in ("followup", "mainline", "deeper")],
+        })
+        prompt = json.dumps({"characterCard": localize(runtime_character_card(card), "en"), "context": context, "playerInput": message[:600], "contract": schema}, ensure_ascii=False)
+        return [{"role": "system", "content": ENGLISH_CHARACTER_SYSTEM}, {"role": "user", "content": prompt}]
     prompt = "人物卡（已移除研究原文与未选 few-shot）：\n" + json.dumps(runtime_character_card(card), ensure_ascii=False) + "\n\n当前状态：\n" + json.dumps(context, ensure_ascii=False) + "\n\n玩家输入：\n" + message[:240] + "\n\n输出合同：\n" + json.dumps(schema, ensure_ascii=False)
     return [{"role": "system", "content": system}, {"role": "user", "content": prompt}]
 
@@ -832,6 +866,33 @@ def fallback_chat_opening(card: dict, snapshot: dict, player_card: dict | None =
         opening = f"又见面了。上次聊到“{detail}”，我还记得。先不急着谈任务——你今天在小屋里过得怎么样？"
         suggestions = ["你还记得那件事，是因为哪一个细节？", "我们先把今天眼前这件事商量清楚，好吗？", "上次没说完的部分，你现在愿意多说一点吗？"]
         stage_direction = f"{pronoun}给你留出身边的位置"
+    if is_english(snapshot):
+        name = character_name(card, "en")
+        player_name = character_name(player_card, "en") if player_card else str(snapshot["player"].get("displayName") or "")
+        if not memories:
+            facts = card.get("sourceProfile", {}).get("facts", {})
+            occupation = facts.get("occupation")
+            known = isinstance(occupation, str) and not any(term in occupation for term in ("待剧情", "待正式确认", "运行时职业待"))
+            verified_intro = str(localize(PUBLIC_CHAT_PREFIXES[card['id']], 'en')).strip().rstrip('.')
+            reason = str(localize(PUBLIC_CHAT_INTROS[card['id']], "en")).strip().rstrip(".")
+            if not reason.lower().startswith("i came here because"):
+                reason, changed = re.subn(r"\bI (?:came here|joined|am here|'m here) to\b", "I came here because I want to", reason, count=1, flags=re.I)
+                if not changed:
+                    reason, changed = re.subn(r"\bI joined so\b", "I came here because I hope", reason, count=1, flags=re.I)
+                if not changed:
+                    reason = "I came here because " + reason
+            opening = f"Hi. {verified_intro}. {reason}. What made you join Heart Journey?"
+            suggestions = [
+                f"Hi, I'm {player_name}, {player_mbti}. I'd like to get to know someone without rushing.",
+                "I wanted to see what happens when I give a new connection a real chance.",
+                f"You mentioned {localize(occupation, 'en') if known else 'your everyday interests'}. What do you enjoy about it?",
+            ]
+            stage_direction = "They turn toward you and wait for your reply."
+        else:
+            detail = str(memories[-1].get("summary") or memories[-1].get("rawQuote") or "our last conversation")[:90]
+            opening = f"Good to see you again. I remember {detail}. How has your day in the villa been?"
+            suggestions = ["What made that detail stay with you?", "Shall we decide what to do next together?", "Would you like to tell me a little more about that?"]
+            stage_direction = "They make room beside them."
     typed = [
         {"type": suggestion_type, "text": text, "style": "mainline-gradient" if suggestion_type == "mainline" else suggestion_type, "action": "prefill-message" if suggestion_type == "deeper" else "send-message"}
         for suggestion_type, text in zip(("followup", "mainline", "deeper"), suggestions)
@@ -930,10 +991,23 @@ allowedSceneDetails 是首聊唯一可用的现场事实白名单。若 sceneTex
 三条建议语必须是自然简体中文（人物 MBTI 除外），不要夹入英文词；每条最多 60 字，尽量控制在 48 字内。第一条只做一次身份说明，第二、三条不要再次说“我是 playerPerspective.name”或重复 MBTI。
 三条建议语逐条执行 contract.suggestions.plansInOrder，不要另写“我刚才做了什么”“我带了什么”或镜头外观察。NPC opening 最后一个问题如果问到了未声明的现场动作，mainline 不沿用那个动作，改为回答更一般的偏好。
 不得编造人物卡外的职业、创伤、前任或节目事实。只输出 JSON。"""
+    if is_english(snapshot):
+        context = localize(context, "en")
+        context["humanSpeechContract"]["language"] = "Use natural English for all visible speech and actions."
+        contract["opening"].update({
+            "length": "30-700 English characters",
+            "requiredLiteralIdentity": {"name": character_name(card, "en"), "mbti": card["mbti"]},
+            "requiredBeginning": f"Hi, I'm {character_name(card, 'en')}, {card['mbti']}.",
+            "requiredReasonLead": "The exact phrase 'I came here because', then a personal relationship reason.",
+        })
+        contract["suggestions"] = {"count": 3, "maxLength": 180, "speaker": character_name(player_card, "en") if player_card else snapshot["player"].get("displayName"), "plansInOrder": ["player identity and reason", "subjective answer to the NPC's question", "specific follow-up about disclosed NPC background"]}
+        return [{"role": "system", "content": ENGLISH_OPENING_SYSTEM}, {"role": "user", "content": json.dumps({"context": context, "contract": contract}, ensure_ascii=False)}]
     return [{"role": "system", "content": system}, {"role": "user", "content": json.dumps({"context": context, "contract": contract}, ensure_ascii=False)}]
 
 
 def validate_chat_opening(card: dict, snapshot: dict, payload: dict, player_card: dict | None = None) -> dict:
+    if is_english(snapshot):
+        return _validate_english_chat_opening(card, snapshot, payload, player_card)
     player_card = _resolved_player_card(snapshot, player_card)
     memories, conversation = _conversation_context(card, snapshot)
     opening = str(payload.get("opening") or "").strip()
@@ -1024,6 +1098,55 @@ def validate_chat_opening(card: dict, snapshot: dict, payload: dict, player_card
         for suggestion_type, text in zip(("followup", "mainline", "deeper"), suggestions)
     ]
     return {"mode": conversation["conversationMode"], "opening": opening, "stageDirection": stage_direction, "suggestions": suggestions, "typedSuggestions": typed}
+
+
+def _validate_english_chat_opening(card: dict, snapshot: dict, payload: dict, player_card: dict | None = None) -> dict:
+    player_card = _resolved_player_card(snapshot, player_card)
+    memories, conversation = _conversation_context(card, snapshot)
+    opening = str(payload.get("opening") or "").strip()
+    stage = str(payload.get("stageDirection") or "").strip()
+    raw = payload.get("suggestions")
+    if not 20 <= len(opening) <= 700 or not 4 <= len(stage) <= 140:
+        raise ValueError("English chat opening or action length does not meet its contract")
+    if not isinstance(raw, list) or len(raw) != 3 or not all(isinstance(item, str) for item in raw):
+        raise ValueError("Chat opening requires exactly three optional player lines")
+    expression = _player_natural_expression_contract(player_card, {**conversation, "recentPlayerTexts": [item.get("playerText") for item in memories[-2:]]}, "", snapshot["attitudes"].get(card["id"], "curious"))
+    suggestions = [_sanitize_generated_kaomoji(item.strip(), expression) for item in raw]
+    if len(set(suggestions)) != 3 or any(not 4 <= len(item) <= 180 for item in suggestions):
+        raise ValueError("English player suggestions are duplicated or have invalid lengths")
+    _validate_player_suggestion_surface(suggestions, expression, "English player suggestions", english=True)
+    joined = opening + stage + " ".join(suggestions)
+    require_english(joined, names=(card["names"]["primary"], player_card["names"]["primary"]))
+    english_surface_checks(joined, str(conversation.get("sceneText") or ""))
+    if re.search(r"\b(?:DeepSeek|Dots|Agent|API|relationship score|trigger event|write to memory)\b", joined):
+        raise ValueError("Chat opening exposes backend details")
+    npc_name = character_name(card, "en")
+    player_name = character_name(player_card, "en")
+    if not memories:
+        if npc_name not in opening or card["mbti"] not in opening:
+            raise ValueError("First chat opening must introduce the NPC's verified name and MBTI")
+        if re.search(r"\b(?:I'm|I am|my name is)\s+" + re.escape(player_name), opening, re.I):
+            raise ValueError("First chat opening assigns the player's identity to the NPC")
+        if not has_background(opening, PUBLIC_BACKGROUND_ANCHORS[card["id"]], english=True):
+            raise ValueError("First chat opening lacks verified public background")
+        occupation = card.get("sourceProfile", {}).get("facts", {}).get("occupation")
+        unknown_job = not isinstance(occupation, str) or any(term in occupation for term in ("待剧情", "待正式确认", "运行时职业待", "未公开"))
+        if unknown_job and re.search(r"\b(?:I(?:'m| am) (?:a |an )?(?:(?:licensed|professional) )?(?:therapist|counsell?or|doctor|nurse|engineer|designer|manager|blogger|producer|artist|writer|teacher)|I work (?:as|in)|my (?:job|profession) is)\b", opening, re.I):
+            raise ValueError("English first chat invents an unconfirmed profession")
+        if "i came here because" not in opening.lower() or not has_relationship_reason(opening):
+            raise ValueError("First chat opening lacks a personal relationship reason for joining")
+        if re.search(r"\b(?:clues?|maps?|keys?|secret rules|yesterday|last week|shoelaces|paper cup|curtain|coconut tree|tape|guess who|you'll find out|voice recorder|old camera|sketchbook|toolbox)\b", joined, re.I):
+            raise ValueError("First chat opening invents a hidden task, prop or past event")
+        if re.search(r"\b(?:I (?:brought|just (?:took|sat|stood|removed))|you just (?:took|sat|stood|removed)|arrived \d+ minutes)\b", joined, re.I):
+            raise ValueError("First chat opening invents a physical action or exact arrival time")
+        prefix = r"^(?:Hi|Hello)[,!\s]+(?:I'm|I am)\s+" + re.escape(player_name) + r"[,\s]+" + re.escape(player_card["mbti"])
+        if not re.search(prefix, suggestions[0], re.I):
+            raise ValueError("First player suggestion must preserve the selected player's identity")
+        if any(player_name in item or player_card["mbti"] in item for item in suggestions[1:]):
+            raise ValueError("Only the first player suggestion may repeat the player's introduction")
+    suggestions = _decorate_suggestions_with_card_expression(suggestions, expression)
+    typed = [{"type": kind, "text": text, "style": "mainline-gradient" if kind == "mainline" else kind, "action": "prefill-message" if kind == "deeper" else "send-message"} for kind, text in zip(("followup", "mainline", "deeper"), suggestions)]
+    return {"mode": conversation["conversationMode"], "opening": opening, "stageDirection": stage, "suggestions": suggestions, "typedSuggestions": typed}
 
 
 def extract_json(text: str) -> dict:

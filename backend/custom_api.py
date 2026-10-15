@@ -17,6 +17,7 @@ from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request
 from fastapi.responses import Response
 
 from backend.agent_prompt import extract_json
+from backend.localization import normalize_language
 from backend.custom_characters import (
     MAX_REQUEST_BYTES, apply_card_copy, build_player_card, card_generation_messages,
     normalize_photo, validate_profile,
@@ -136,6 +137,7 @@ def make_custom_router(get_db, require_user, request_provider, llm_text) -> APIR
             if not isinstance(body, dict):
                 raise ValueError('请填写人物资料')
             profile = validate_profile(body)
+            profile['language'] = normalize_language(body.get('language') or request.headers.get('X-Game-Language'))
             # Only the new form explicitly covers automatic transmission/one paid
             # task. Older clients' photo-only consent cannot be upgraded silently.
             if 'autoVideo' in body and not isinstance(body['autoVideo'], bool):

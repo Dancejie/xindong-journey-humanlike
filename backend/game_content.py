@@ -15,6 +15,9 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from backend.localization import character_name, localize, normalize_language
+from backend.language_support import english_surface_checks, has_background, has_join_reason, has_relationship_reason, is_english, require_english, validate_player_identity_claims
+
 
 _CUSTOM_PLAYER_CARD: ContextVar[dict[str, Any] | None] = ContextVar("custom_player_card", default=None)
 
@@ -85,13 +88,24 @@ def player_card_for(snapshot: dict[str, Any]) -> dict[str, Any]:
         return deepcopy(CHARACTER_CARD_MAP[snapshot["player"]["perspectiveCharacterId"]])
 
 
-def introduction_fallbacks(character_id: str) -> dict[str, tuple[str, str]]:
+def introduction_fallbacks(character_id: str, language: str = "zh-CN") -> dict[str, tuple[str, str]]:
     if character_id in INTRODUCTION_FALLBACKS:
         return INTRODUCTION_FALLBACKS[character_id]
     card = CHARACTER_CARD_MAP[character_id]
     name, mbti = card["names"]["primary"], card["mbti"]
     facts = card.get("sourceProfile", {}).get("facts", {})
     occupation = str(facts.get("occupation") or "")
+    if normalize_language(language) == "en" and card.get("isCustom"):
+        known_occupation = bool(occupation) and "未公开" not in occupation
+        background = f"My work is {occupation}. " if known_occupation else "In everyday life, I like to share a little at a time. "
+        intro = str(card.get("customIntroduction") or "") if card.get("language") == "en" else ""
+        if not (name in intro and mbti in intro and len(intro) <= 900 and has_join_reason(intro)):
+            intro = f"Hi, everyone. I'm {name}, an {mbti}. {background}I came here because I'd like to get to know people at my own pace."
+        return {
+            "intro-clear": (intro, "Introduce yourself in your own words; you can edit what you say next."),
+            "intro-question": (f"I'm {name}, {mbti}. {background}I joined to meet people I can talk to. What would everyone like to talk about first?", "Start simply and leave room for everyone to answer."),
+            "intro-honest": (f"My name is {name}, and I'm an {mbti}. {background}I'm here to know someone at a pace that feels right, without deciding what this has to become.", "Say what you know about yourself; you don't have to explain everything at once."),
+        }
     background = f"我做{occupation}。" if occupation and "未公开" not in occupation else "我们先从日常小事聊起。"
     intro = str(card.get("customIntroduction") or "")
     background_present = occupation in intro if occupation and "未公开" not in occupation else any(word in intro for word in ("平时", "日常", "喜欢"))
@@ -107,7 +121,7 @@ def introduction_fallbacks(character_id: str) -> dict[str, tuple[str, str]]:
 ROOT = Path(__file__).resolve().parent.parent
 RELATIONSHIP_AXES = ("trust", "affection", "respect", "fear", "debt", "attraction", "resentment")
 ATTITUDES = {"warm", "curious", "guarded", "challenging", "vulnerable", "softened", "uncertain", "honest", "moved", "careful", "steady", "boundary"}
-CONTENT_VERSION = "4.2.3-custom-player-video-r11"
+CONTENT_VERSION = "4.3.0-bilingual-r12"
 CHAT_CONTEXT_VERSION = 1
 CHAT_LOCATIONS = {
     "hotel-entrance": {"name": "酒店玄关", "supportsGroup": True},
@@ -239,7 +253,7 @@ def _validate_suggestion_surface(
         raise ValueError("模型 建议语颜文字使用过多，或不符合主角人物卡、冷却与当前语境")
     for item in items:
         text = item.get("text", "")
-        if _kaomoji_count(text) and len(re.findall(r"[\u4e00-\u9fff]", text)) < 4:
+        if _kaomoji_count(text) and len(re.findall(r"[A-Za-z]" if is_english(snapshot) else r"[\u4e00-\u9fff]", text)) < 4:
             raise ValueError("模型 建议语不能用颜文字代替完整表达")
 
 INTRODUCTION_FALLBACKS: dict[str, dict[str, tuple[str, str]]] = {
@@ -899,17 +913,21 @@ def _empty_axes() -> dict[str, int]:
 
 def split_story_beats(text: str) -> list[str]:
     """Split visible prose into a small manual-reading sequence without changing its meaning."""
-    parts = [part.strip() for part in re.findall(r"[^。！？!?；;]+[。！？!?；;]?", str(text or "")) if part.strip()]
+    english = not re.search(r"[\u4e00-\u9fff]", str(text or ""))
+    if english:
+        parts = [part.strip() for part in re.split(r"(?<!\bMr.)(?<!\bMs.)(?<!\bDr.)(?<=[.!?;])\s+", str(text or "")) if part.strip()]
+    else:
+        parts = [part.strip() for part in re.findall(r"[^。！？!?；;]+[。！？!?；;]?", str(text or "")) if part.strip()]
     if not parts:
         return []
     beats: list[str] = []
     for part in parts:
         if beats and (len(part) < 18 or len(beats[-1]) < 18) and len(beats[-1]) + len(part) <= 60:
-            beats[-1] += part
+            beats[-1] += (" " if english else "") + part
         else:
             beats.append(part)
     while len(beats) > 4:
-        beats[-2] += beats.pop()
+        beats[-2] += (" " if english else "") + beats.pop()
     return beats
 
 
@@ -1250,7 +1268,7 @@ def day1_media_context(state: dict[str, Any], node: dict[str, Any] | None = None
     }
 
 
-def build_fallback_script_flavor(perspective_character_id: str, cast_ids: list[str] | None = None) -> dict[str, Any]:
+def build_fallback_script_flavor(perspective_character_id: str, cast_ids: list[str] | None = None, language: str = "zh-CN") -> dict[str, Any]:
     """Natural authored fallback; IDs and patches always come from ``NODES``."""
     nodes: dict[str, Any] = {}
     for node_id, blueprint in NODES.items():
@@ -1275,7 +1293,7 @@ def build_fallback_script_flavor(perspective_character_id: str, cast_ids: list[s
     for choice, target_id in zip(nodes["cast-first-impressions"]["choices"], targets):
         label, hint = CAST_FIRST_IMPRESSION_FALLBACKS[target_id]
         choice.update({"label": label, "hint": hint, "targetCharacterId": target_id})
-    intro_copy = introduction_fallbacks(perspective_character_id)
+    intro_copy = introduction_fallbacks(perspective_character_id, language)
     for choice in nodes["introductions"]["choices"]:
         label, hint = intro_copy[choice["id"]]
         choice.update({"label": label, "hint": hint, "introductionMode": INTRODUCTION_MODES[choice["id"]]})
@@ -1290,7 +1308,7 @@ def build_fallback_script_flavor(perspective_character_id: str, cast_ids: list[s
 
 
 @with_player_card
-def create_snapshot(user_mbti: str = "INFP", perspective_character_id: str | None = None, custom_player_card: dict[str, Any] | None = None) -> dict[str, Any]:
+def create_snapshot(user_mbti: str = "INFP", perspective_character_id: str | None = None, custom_player_card: dict[str, Any] | None = None, language: str = "zh-CN") -> dict[str, Any]:
     if custom_player_card is not None:
         if perspective_character_id not in (None, custom_player_card["id"]) or user_mbti != custom_player_card["mbti"]:
             raise ValueError("自定义角色与所选 MBTI 不一致。")
@@ -1302,7 +1320,7 @@ def create_snapshot(user_mbti: str = "INFP", perspective_character_id: str | Non
     relationships = {character_id: _empty_axes() for character_id in cast_ids}
     flags = {key: 0 for key in ("heat", "clarity", "publicImpression", "courage", "priorityChoice", "observation", "taskFocus", "relationshipFocus", "reciprocity", "eventLinked", "acceptedEvent")}
     snapshot = {
-        "runId": run_id, "contentVersion": CONTENT_VERSION, "revision": 0,
+        "runId": run_id, "contentVersion": CONTENT_VERSION, "revision": 0, "language": normalize_language(language),
         "player": {"mbti": user_mbti, "group": player_group(user_mbti), "gender": CHARACTER_MAP[perspective_character_id]["gender"], "displayName": CHARACTER_MAP[perspective_character_id]["name"], "perspectiveCharacterId": perspective_character_id},
         "castIds": cast_ids, "mediaRotation": media_rotation_for(perspective_character_id, run_id),
         "nodeId": "arrival-context", "flags": flags, "relationships": relationships,
@@ -1315,14 +1333,29 @@ def create_snapshot(user_mbti: str = "INFP", perspective_character_id: str | Non
         "firstImpressionSeed": None,
         "storyArc": {"phase": "early", "beatCount": 0, "activeMissionId": None, "tension": 0, "reciprocity": 0, "uncertainty": 0},
         "storyEventLedger": [], "storyMission": None, "storyCooldowns": {}, "castTags": [],
-        "scriptFlavor": build_fallback_script_flavor(perspective_character_id, cast_ids),
+        "scriptFlavor": build_fallback_script_flavor(perspective_character_id, cast_ids, language),
         "cinematicReceipt": None, "createdAt": utc_now(), "updatedAt": utc_now()
     }
     if custom_player_card is not None:
         snapshot["customPlayerCard"] = deepcopy(custom_player_card)
         snapshot["player"].update({"isCustom": True, "customCharacterId": perspective_character_id})
     _refresh_scene_presence(snapshot)
+    snapshot["scriptFlavor"] = localize(snapshot["scriptFlavor"], snapshot["language"])
+    snapshot["scriptFlavor"]["language"] = snapshot["language"]
     return snapshot
+
+
+@with_player_card
+def set_snapshot_language(snapshot: dict[str, Any], language: str) -> dict[str, Any]:
+    """Switch authored copy without resetting progress or rewriting old testimony."""
+    state = migrate_snapshot(snapshot)
+    assert state is not None
+    normalized = normalize_language(language)
+    if normalized != state["language"] or state["scriptFlavor"].get("language", "zh-CN") != normalized:
+        state["scriptFlavor"] = localize(build_fallback_script_flavor(state["player"]["perspectiveCharacterId"], active_cast_ids(state), normalized), normalized)
+        state["scriptFlavor"]["language"] = normalized
+    state["language"] = normalized
+    return state
 
 
 def _scene_context_for_node(node_id: str) -> dict[str, Any]:
@@ -1484,6 +1517,7 @@ def migrate_snapshot(snapshot: dict[str, Any] | None) -> dict[str, Any] | None:
     if not snapshot:
         return None
     state = deepcopy(snapshot)
+    state["language"] = normalize_language(state.get("language"))
     state["nodeId"] = LEGACY_NODE_MAP.get(state.get("nodeId"), state.get("nodeId", "arrival-context"))
     if state["nodeId"] not in NODES:
         state["nodeId"] = "arrival-context"
@@ -1561,9 +1595,9 @@ def migrate_snapshot(snapshot: dict[str, Any] | None) -> dict[str, Any] | None:
         }
     flavor = state.get("scriptFlavor")
     if not isinstance(flavor, dict) or flavor.get("perspectiveCharacterId") != perspective_id:
-        state["scriptFlavor"] = build_fallback_script_flavor(perspective_id, cast_ids)
+        state["scriptFlavor"] = localize(build_fallback_script_flavor(perspective_id, cast_ids, state["language"]), state["language"])
     else:
-        fallback = build_fallback_script_flavor(perspective_id, cast_ids)
+        fallback = localize(build_fallback_script_flavor(perspective_id, cast_ids, state["language"]), state["language"])
         flavor.setdefault("schemaVersion", 1); flavor.setdefault("source", "fallback"); flavor.setdefault("nodes", {})
         for node_id, node_flavor in fallback["nodes"].items():
             flavor["nodes"].setdefault(node_id, node_flavor)
@@ -1597,6 +1631,14 @@ def heart_message_suggestions(state: dict[str, Any], character_id: str) -> list[
     character = CHARACTER_MAP[character_id]
     memories = [item for item in state.get("echoMemories", []) if item.get("characterId") == character_id]
     detail = str((memories[-1].get("summary") if memories else "今天和你说话的那一刻") or "今天和你说话的那一刻")[:30]
+    if is_english(state):
+        name = character_name(character, "en")
+        detail = str(memories[-1].get("summary") or "our conversation")[:90] if memories else "our conversation"
+        return [
+            {"id": "warm-specific", "text": f"I keep thinking about {detail}. I'd like to hear more from you."},
+            {"id": "light-invite", "text": f"Talking with you felt easy. Tomorrow, {name}, I'd like to say hello first."},
+            {"id": "honest-short", "text": "There was a moment today when I really thought of you. Good night."},
+        ]
     return [
         {"id": "warm-specific", "text": f"今天和你聊到“{detail}”，我还想继续听你说下去。"},
         {"id": "light-invite", "text": f"和你相处比想象中轻松。明天见到{character['name']}，我想先说声早。"},
@@ -1609,7 +1651,7 @@ def _resolve_heart_message_text(
 ) -> tuple[str, str]:
     custom = str(custom_text or "").strip()
     if custom:
-        if not 2 <= len(custom) <= 100:
+        if not 2 <= len(custom) <= (280 if is_english(state) else 100):
             raise ValueError("心动短信请输入 2-100 个字。")
         if any(term in custom for term in ("DeepSeek", "Dots", "dots", "Agent", "关系数值", "触发事件")):
             raise ValueError("心动短信不能包含后台状态。")
@@ -1630,9 +1672,12 @@ def _incoming_heart_messages(state: dict[str, Any]) -> list[dict[str, Any]]:
         text = f"你今天说到“{remembered}”时，我很想再听你讲一点。明天见。"
     else:
         text = "今天第一次见面有点匆忙，但我记住了你认真听别人说话的样子。明天见。"
+    if is_english(state):
+        text = (f"When you mentioned {str(memories[-1].get('summary') or 'that little moment')[:90]}, I wanted to hear more. See you tomorrow."
+                if memories else "Our first meeting was brief, but I noticed how carefully you listened. See you tomorrow.")
     return [{
         "id": str(uuid4()), "text": text, "body": text,
-        "senderLabel": "匿名嘉宾", "isAnonymous": True,
+        "senderLabel": "Anonymous guest" if is_english(state) else "匿名嘉宾", "isAnonymous": True,
         "channel": "heart-message", "receivedAt": utc_now(), "day": 1,
     }]
 
@@ -1810,6 +1855,17 @@ def _fallback_typed_suggestions(
         {"type": "mainline", "text": stage_copy},
         {"type": "deeper", "text": deeper},
     ]
+    if is_english(snapshot):
+        target_name = character_name(card, "en")
+        items = [
+            {"type": "followup", "text": "You just mentioned that. Which part would you like me to remember?"},
+            {"type": "mainline", "text": {
+                "guided-chat": f"{target_name}, want to prepare dinner together? We can choose our parts first.",
+                "team-up": "Shall we split the dinner preparation, drinks and table setup?",
+                "anonymous-letter": "If I send a message tonight, I'd say I'd like to know you better.",
+            }.get(node_id, "Shall we decide what to do next together?")},
+            {"type": "deeper", "text": "What would you like someone to understand about that part of you?"},
+        ]
     surface = _player_suggestion_surface_policy(snapshot, card, dialogue, player_text, attitude)
     kaomoji = surface.get("fallbackKaomoji")
     if surface["mayUseKaomoji"] and isinstance(kaomoji, str):
@@ -1868,8 +1924,13 @@ def _normalize_agent_suggestions(
     for item in items:
         suggestion_type = item["type"]
         text = item["text"].strip()
-        if not 4 <= len(text) <= 72 or text in seen:
+        if not 4 <= len(text) <= (180 if is_english(snapshot) else 72) or text in seen:
             raise ValueError("模型 建议语重复或长度不符合合同")
+        if is_english(snapshot):
+            visible_quotes = tuple(str(item.get("rawQuote") or item.get("playerText") or "") for item in snapshot.get("echoMemories", []) if item.get("characterId") == card["id"])
+            require_english(text, names=(player_name, card["names"]["primary"]), evidence=(player_text, *visible_quotes))
+            english_surface_checks(text)
+            validate_player_identity_claims(text, character_name(player_card, "en"), tuple(character_name(item, "en") for item in CHARACTER_CARD_MAP.values()))
         if any(term in text for term in (*MECHANICAL_COPY_TERMS, "关系数值", "写入记忆", "触发事件", "DeepSeek", "Dots", "dots", "Agent", "API")):
             raise ValueError("模型 建议语暴露后台或使用机械表达")
         if any(term in text for term in ("带的那台旧相机", "节目组秘密", "桌签", "线索", "地图", "钥匙")):
@@ -1881,7 +1942,8 @@ def _normalize_agent_suggestions(
             raise ValueError("模型 建议语替主角编造了职业")
         if suggestion_type == "followup":
             link_markers = ("刚才", "你说", "你问", "这句话", "你提到", "你刚刚", "你说的")
-            if not any(marker in text for marker in link_markers):
+            linked = bool(re.search(r"\b(?:you (?:just |said|mentioned|asked)|that|this|your)\b", text, re.I)) if is_english(snapshot) else any(marker in text for marker in link_markers)
+            if not linked:
                 raise ValueError("followup 建议语没有承接玩家上一句与角色回复")
             source_copy = re.sub(r"\s+", "", player_text + " " + dialogue)
             for match in re.finditer(r"你刚才说(?:到|过)?[“「]?([^，。？！；—”」]{3,18})", text):
@@ -1903,6 +1965,12 @@ def _normalize_agent_suggestions(
                 actionable = any(anchor in text for anchor in ("短信", "今晚", "继续认识"))
             else:
                 actionable = True
+            if is_english(snapshot):
+                lower = text.lower()
+                if node_id in {"guided-chat", "team-up"}:
+                    actionable = any(word in lower for word in ("dinner", "kitchen", "food", "drinks", "table")) and any(word in lower for word in ("prepare", "split", "together", "take", "set", "choose", "help"))
+                elif node_id == "anonymous-letter":
+                    actionable = any(word in lower for word in ("message", "tonight", "know you"))
             if not actionable:
                 raise ValueError("mainline 建议语没有回到当前剧情目标")
         seen.add(text)
@@ -1959,7 +2027,8 @@ def validate_agent_turn(
     provider: str | None = None,
 ) -> dict[str, Any]:
     dialogue = str(payload.get("dialogue") or "").strip()
-    if not 8 <= len(dialogue) <= 240:
+    english = is_english(snapshot)
+    if not 8 <= len(dialogue) <= (700 if english else 240):
         raise ValueError("模型 角色台词长度不符合合同")
     if any(term in dialogue for term in MECHANICAL_COPY_TERMS):
         raise ValueError("模型 角色台词使用了通用机械表达")
@@ -1983,8 +2052,15 @@ def validate_agent_turn(
         token for token in re.findall(r"[A-Za-z]{3,}", dialogue)
         if token.upper() not in allowed_latin_tokens
     ]
-    if unnecessary_english:
+    if unnecessary_english and not english:
         raise ValueError("模型 角色台词夹杂了不必要的英文单词")
+    if english:
+        owned_quotes = tuple(str(item.get("rawQuote") or item.get("playerText") or "") for item in (snapshot or {}).get("echoMemories", []) if item.get("characterId") == card["id"])
+        english_evidence = (player_text, *owned_quotes)
+        require_english(dialogue + str(payload.get("stageDirection") or ""), names=(card["names"]["primary"], (snapshot or {}).get("player", {}).get("displayName", "")), evidence=english_evidence)
+        english_surface_checks(dialogue + " " + str(payload.get("stageDirection") or ""), json.dumps((snapshot or {}).get("scriptFlavor", {}), ensure_ascii=False) + player_text)
+        if re.search(r"why.{0,30}(?:join|come|came|stay|here)", player_text, re.I) and not has_relationship_reason(dialogue):
+            raise ValueError("When asked why they joined/stayed, the character must give a relationship reason")
     ai_summary_patterns = (
         r"听起来你(?:似乎|好像|可能)",
         r"我能(?:感受|感觉)到",
@@ -2056,14 +2132,16 @@ def validate_agent_turn(
             )
             if any(term in dialogue for term in impossible_first_meeting) or re.search(r"(?:已经|连续|数了).{0,6}[一二三四五六七八九十\d]+天", dialogue):
                 raise ValueError("模型 首聊台词编造了尚未发生的时间或节目事实")
-            if card["names"]["primary"] not in dialogue:
+            if character_name(card, "en" if english else "zh-CN") not in dialogue:
                 raise ValueError("模型 首聊没有直接介绍角色姓名")
             if card["mbti"] not in dialogue:
                 raise ValueError("模型 首聊没有清楚介绍 MBTI 或性格")
-            if not any(anchor in dialogue for anchor in INTRO_BACKGROUND_ANCHORS[character_id]):
+            if not has_background(dialogue, INTRO_BACKGROUND_ANCHORS[character_id], english=english):
                 raise ValueError("模型 首聊没有介绍人物卡允许公开的工作或日常背景")
-            if not any(marker in dialogue for marker in ("来这里", "来这儿", "来这个节目", "上这个节目", "参加", "这次", "这七天", "到这里")):
+            if not (has_join_reason(dialogue) and has_relationship_reason(dialogue) if english else any(marker in dialogue for marker in ("来这里", "来这儿", "来这个节目", "上这个节目", "参加", "这次", "这七天", "到这里"))):
                 raise ValueError("模型 首聊没有说清参加节目的来意")
+            if english and re.search(r"\b(?:yesterday|last week|secret rules|clues|map|keys|guess who|you'll find out)\b", dialogue, re.I):
+                raise ValueError("English first meeting invents future, prior or secret story facts")
             if re.search(r"(?:来这里|来参加|这次来|这七天).{0,32}(?:想|主要).{0,16}(?:修|破解|赢|找出)", dialogue):
                 raise ValueError("模型 首聊把人物任务写成了参加恋综的主要原因")
             if any(term in stage_direction for term in ("录音笔", "旧相机", "插画本", "工具箱")):
@@ -2080,6 +2158,10 @@ def validate_agent_turn(
             )
             if unknown_job and re.search(r"(?:我是|职业是|工作是|从事).{0,12}(?:师|员|经理|博主|策划|工程|设计|工作|行业)", dialogue):
                 raise ValueError("模型 首聊替角色编造了未确认职业")
+            if english and unknown_job and re.search(r"\b(?:I(?:'m| am) (?:a |an )?(?:(?:licensed|professional) )?(?:therapist|counsell?or|doctor|nurse|engineer|designer|manager|blogger|producer|artist|writer|teacher)|I work (?:as|in)|my (?:job|profession) is)\b", dialogue, re.I):
+                raise ValueError("English first meeting invents an unconfirmed profession")
+            if english and re.search(r"\b(?:voice recorder|old camera|sketchbook|toolbox)\b", stage_direction, re.I):
+                raise ValueError("English first meeting invents an undeclared personal prop")
     attitude = str(payload.get("attitude") or "").strip()
     if attitude not in ATTITUDES:
         raise ValueError("模型 返回了未允许的角色态度")
@@ -2096,13 +2178,16 @@ def validate_agent_turn(
     event_id = payload.get("proposedEventId")
     if event_id not in [None, "", *card["agentPolicy"]["allowedEventIds"]]: event_id = None
     memory = payload.get("memory") or {}; kind = str(memory.get("kind") or "episodic")
+    if english:
+        for visible in (payload.get("publicReason"), payload.get("topicSummary"), memory.get("summary"), memory.get("interpretation")):
+            require_english(str(visible or ""), names=(card["names"]["primary"], (snapshot or {}).get("player", {}).get("displayName", "")), evidence=english_evidence)
     if kind not in {"episodic", "promise", "preference", "semantic"}: kind = "episodic"
     try: salience = int(memory.get("salience", 50) or 50)
     except (TypeError, ValueError): salience = 50
     try: valence = int(memory.get("emotionalValence", 0) or 0)
     except (TypeError, ValueError): valence = 0
     suggestions = _normalize_agent_suggestions(card, payload, snapshot, dialogue, player_text)
-    topic_summary = str(payload.get("topicSummary") or memory.get("summary") or "本轮具体交流").strip()[:40]
+    topic_summary = str(payload.get("topicSummary") or memory.get("summary") or ("This conversation" if english else "本轮具体交流")).strip()[:80 if english else 40]
     if snapshot:
         previous_topics = [
             str((item.get("topic") or item) if isinstance(item, dict) else item).strip()
@@ -2113,9 +2198,9 @@ def validate_agent_turn(
     return {
         "dialogue": dialogue, "stageDirection": str(payload.get("stageDirection") or "").strip()[:100],
         "attitude": attitude, "intentId": intent_id,
-        "publicReason": str(payload.get("publicReason") or "关系判断已更新").strip()[:100],
+        "publicReason": str(payload.get("publicReason") or ("A concrete response to this moment" if english else "关系判断已更新")).strip()[:100],
         "relationshipDelta": delta,
-        "memory": {"kind": kind, "summary": str(memory.get("summary") or "这次交流被记住了").strip()[:120], "interpretation": str(memory.get("interpretation") or "仍需后续验证").strip()[:160], "salience": max(0, min(100, salience)), "emotionalValence": max(-100, min(100, valence))},
+        "memory": {"kind": kind, "summary": str(memory.get("summary") or ("They shared a conversation" if english else "这次交流被记住了")).strip()[:240 if english else 120], "interpretation": str(memory.get("interpretation") or ("This may become clearer with time" if english else "仍需后续验证")).strip()[:320 if english else 160], "salience": max(0, min(100, salience)), "emotionalValence": max(-100, min(100, valence))},
         "topicSummary": topic_summary,
         "proposedEventId": event_id or None,
         "suggestions": suggestions,
@@ -2171,9 +2256,10 @@ def commit_agent_turn(
         activated_event = {"id": str(uuid4()), "eventId": policy["eventId"], "characterId": character_id, "label": policy["label"], "text": policy["activationText"], "sourceIntentId": turn["intentId"], "activatedAt": utc_now()}
         state["eventLedger"].append(activated_event); state["activeEventId"] = policy["eventId"]
     memory_id = str(uuid4())
+    input_limit = 600 if is_english(state) else 240
     memory = {
         "id": memory_id, "ownerId": character_id, "characterId": character_id, "branchId": "main", "scope": "relationship",
-        "kind": turn["memory"]["kind"], "rawQuote": player_text[:240], "playerText": player_text[:240],
+        "kind": turn["memory"]["kind"], "rawQuote": player_text[:input_limit], "playerText": player_text[:input_limit],
         "summary": turn["memory"]["summary"], "interpretation": turn["memory"]["interpretation"], "salience": turn["memory"]["salience"], "emotionalValence": turn["memory"]["emotionalValence"],
         "agentReply": turn["dialogue"], "stageDirection": turn["stageDirection"], "attitude": turn["attitude"], "intentId": turn["intentId"],
         "topicSummary": turn["topicSummary"],
@@ -2201,7 +2287,7 @@ def commit_agent_turn(
         "time": context["time"], "locationId": context["locationId"], "locationName": context["locationName"],
         "channel": context["channel"], "participantIds": context["participantIds"],
         "participantNames": context["participantNames"],
-        "playerText": player_text[:240], "agentReply": turn["dialogue"],
+        "playerText": player_text[:input_limit], "agentReply": turn["dialogue"],
         "llmProvider": generation_provider,
         "topicSummary": turn["topicSummary"], "summary": turn["memory"]["summary"],
         "createdAt": memory["createdAt"],
@@ -2209,7 +2295,7 @@ def commit_agent_turn(
     history_item = next((item for item in history if item.get("conversationId") == context["conversationId"]), None)
     if history_item is None:
         history_item = {
-            **context, "playerText": player_text[:240], "summary": turn["memory"]["summary"],
+            **context, "playerText": player_text[:input_limit], "summary": turn["memory"]["summary"],
             "memoryIds": [memory_id], "turns": [history_turn], "turnCount": 1,
             "createdAt": memory["createdAt"], "updatedAt": memory["createdAt"],
         }
@@ -2217,7 +2303,7 @@ def commit_agent_turn(
     else:
         history_item.setdefault("memoryIds", []).append(memory_id)
         history_item.setdefault("turns", []).append(history_turn)
-        history_item["playerText"] = player_text[:240]
+        history_item["playerText"] = player_text[:input_limit]
         history_item["summary"] = turn["memory"]["summary"]
         history_item["updatedAt"] = memory["createdAt"]
         del history_item["turns"][:-40]
@@ -2380,7 +2466,10 @@ def project_view(snapshot: dict[str, Any]) -> dict[str, Any]:
     heart_mailbox["sentCount"] = len(heart_mailbox.get("sent", []))
     heart_mailbox["receivedCount"] = len(heart_mailbox.get("received", []))
     heart_mailbox["unreadCount"] = len(heart_mailbox.get("received", [])) if state["nodeId"] == "callback" else 0
-    return {
+    view = {
         "snapshot": _public_snapshot(state), "node": node, "characters": projected_characters, "mediaContext": media_context,
         "chatContexts": available_chat_contexts(state), "heartMailbox": heart_mailbox,
     }
+    if is_english(state):
+        view["node"].get("messageComposer", {}).update(maxLength=280)
+    return localize(view, state["language"])

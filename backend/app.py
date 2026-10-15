@@ -63,6 +63,9 @@ from backend.story_director import (
     validate_story_director_output,
 )
 from backend.custom_api import make_custom_router, load_custom, hydrate_custom_snapshot
+from backend.localization import localize, normalize_language
+from backend.language_support import REQUEST_LANGUAGE, is_english
+from backend.game_content import set_snapshot_language
 
 ROOT = Path(__file__).resolve().parent
 FRONTEND_DIST = ROOT.parent / "frontend" / "dist"
@@ -197,6 +200,8 @@ def _load_run(conn: psycopg.Connection, run_id: str, owner_id: str, for_update: 
     raw = hydrate_custom_snapshot(conn, raw, owner_id)
     migrated = migrate_snapshot(raw)
     assert migrated is not None
+    if REQUEST_LANGUAGE.get() is not None:
+        migrated = set_snapshot_language(migrated, REQUEST_LANGUAGE.get())
     return migrated
 
 
@@ -237,7 +242,9 @@ async def _agent_turn(
             return validated, generator
         except Exception as error:
             if attempt == 0:
-                messages = [*messages, {"role": "user", "content": f"上一轮未通过人物与时间线合同：{error}。保持同一人物判断，重写完整 JSON；只使用当前已发生事实。若报错涉及设施故障或物件状态，完全删除灯架、门框、挂钩、门锁、松动、晃动、卡住、维修和固定等未在 scene.sceneText 中出现的内容；被问‘注意到什么’时，改答 scene 中已经出现的人、声音、光线、海风或角色自己的真实反应，不要把观察写成排查故障。逐字段给出最终值：attitude、intentId、memory.kind 必须各为一个标量字符串，绝不能返回数组、候选列表或说明对象；proposedEventId 只能是 null 或一个字符串。若原因涉及重复，必须避开 usedTopics，并贡献一个新的具体事实、轻巧反应或可执行行动。"}]
+                repair = (f"The previous JSON failed the character/timeline contract: {error}. Rewrite the complete JSON in natural English, preserving the same character decision and all allowed IDs/enums. Use only committed scene facts; remove undeclared facility faults or props. Do not repeat usedTopics. attitude, intentId and memory.kind must be scalar strings; proposedEventId is null or one string. Add a concrete new fact, reaction or action."
+                          if is_english(snapshot) else f"上一轮未通过人物与时间线合同：{error}。保持同一人物判断，重写完整 JSON；只使用当前已发生事实。若报错涉及设施故障或物件状态，完全删除灯架、门框、挂钩、门锁、松动、晃动、卡住、维修和固定等未在 scene.sceneText 中出现的内容；被问‘注意到什么’时，改答 scene 中已经出现的人、声音、光线、海风或角色自己的真实反应，不要把观察写成排查故障。逐字段给出最终值：attitude、intentId、memory.kind 必须各为一个标量字符串，绝不能返回数组、候选列表或说明对象；proposedEventId 只能是 null 或一个字符串。若原因涉及重复，必须避开 usedTopics，并贡献一个新的具体事实、轻巧反应或可执行行动。")
+                messages = [*messages, {"role": "user", "content": repair}]
                 continue
             if isinstance(payload, dict) and any(term in str(error) for term in ("建议语", "followup", "mainline")):
                 payload.pop("suggestions", None)
@@ -267,13 +274,16 @@ async def _generate_day1_node_script(
         except Exception as error:
             if attempt == 0:
                 protagonist_name = player_card_for(snapshot)["names"]["primary"]
-                messages = [*messages, {"role": "user", "content": (
+                repair = (
                     f"上一稿未通过当前节点合同：{error}。保持人物卡和固定 choice id，只重写完整 node JSON。"
                     f"身份再次确认：玩家就是{protagonist_name}，‘你’就是{protagonist_name}，场内没有第二个{protagonist_name}，不得让{protagonist_name}作为NPC对你行动或说话。"
                     "把报错指出的未声明物件从 title、text、textBeats、action 和全部 choices 中彻底删除；不得用另一个同类物件替换。人物语言锚点只影响措辞，不能变成现场道具或新事实。"
                     "如果 action 涉及任何不确定物件，直接逐字使用 deterministicNode.safeActionFallback。"
                     "完整 JSON 根对象必须保留 title、text、textBeats、speakerId、action、choices 六个键；speakerId 不确定时固定写 narrator，不能省略。"
-                )}]
+                )
+                if is_english(snapshot):
+                    repair = f"The node JSON failed its contract: {error}. Rewrite the complete node in natural English using the same choice IDs. The selected protagonist is YOU, never a second NPC. Remove every undeclared prop; use deterministicNode.safeActionFallback if uncertain. Include title, text, textBeats, speakerId, action, choices; narrator is the safe speaker default."
+                messages = [*messages, {"role": "user", "content": repair}]
     return None
 
 
@@ -314,14 +324,17 @@ async def _chat_opening(
                 player_name = player_card["names"]["primary"]
                 player_mbti = player_card["mbti"]
                 npc_name = card["names"]["primary"]
-                messages = [*messages, {"role": "user", "content": (
+                repair = (
                     f"上一稿未通过首聊合同：{error}。请重写完整 JSON，并一次检查完以下各项："
                     f"opening 只能由 NPC {npc_name} 说，必须逐字含‘我来这里，是因为’；"
                     f"suggestions 只能由玩家 {player_name} 说，第一条必须以‘嗨，我是{player_name}，{player_mbti}’开头，"
                     "后两条不得重复姓名或 MBTI；三条各不超过 48 字，不夹英文，不自行键入颜文字。"
                     "sceneText 未写具体动作和物件，所以不要声称双方刚才脱鞋、找座位、拿放东西或自带某件物品；只承接 opening 中已经说出的想法。"
                     "三条依次写：玩家身份和参加原因；玩家对 opening 问题的主观回答；从 NPC 已公开背景追问一个具体问题。stageDirection 只写看向、点头或停顿。"
-                )}]
+                )
+                if is_english(snapshot):
+                    repair = f"The chat opening JSON failed: {error}. Rewrite the complete JSON in natural English. opening belongs to the NPC only and must contain 'I came here because', verified NPC name, MBTI and public background. Suggestions belong to the selected player only; the first starts 'Hi, I'm PLAYER_NAME, PLAYER_MBTI.' The other two never repeat the player's identity. No undeclared objects, actions, kaomoji or prior shared experiences; stageDirection is a look, nod or pause."
+                messages = [*messages, {"role": "user", "content": repair}]
     return fallback, None
 
 
@@ -335,7 +348,8 @@ async def _story_director_turn(
     try:
         return validate_story_director_output(snapshot, candidates, payload), generator
     except ValueError as error:
-        repair = [*messages, {"role": "user", "content": f"上一份 JSON 未通过事件合同：{error}。请重新输出完整 JSON；只写候选参与者的行动。"}]
+        repair_text = (f"The JSON failed the event contract: {error}. Rewrite the complete JSON in natural English; only the allowed candidate participants may act. Preserve IDs, deadlines, player agency and scene boundaries." if is_english(snapshot) else f"上一份 JSON 未通过事件合同：{error}。请重新输出完整 JSON；只写候选参与者的行动。")
+        repair = [*messages, {"role": "user", "content": repair_text}]
         repaired_result = await _llm_text(repair, max_tokens=1100, provider=generator["provider"])
         repaired_raw, repaired_generator = _coerce_llm_result(repaired_result, generator["provider"])
         return validate_story_director_output(snapshot, candidates, extract_json(repaired_raw)), repaired_generator
@@ -348,7 +362,19 @@ app.include_router(make_custom_router(_get_db_conn, _require_user, _request_prov
 @app.middleware("http")
 async def _runtime_cache_headers(request: Request, call_next):
     """Keep repeat visits light while preserving byte-range video responses."""
-    response = await call_next(request)
+    language_header = request.headers.get("X-Game-Language")
+    language = normalize_language(language_header) if language_header else None
+    token = REQUEST_LANGUAGE.set(language)
+    try:
+        response = await call_next(request)
+        if request.url.path.startswith("/api/") and language == "en" and "application/json" in response.headers.get("content-type", ""):
+            raw = b"".join([chunk async for chunk in response.body_iterator])
+            value = json.loads(raw)
+            headers = {key: value for key, value in response.headers.items() if key.lower() != "content-length"}
+            response = JSONResponse(localize(value, "en"), status_code=response.status_code, headers=headers)
+            response.headers["Content-Language"] = "en"
+    finally:
+        REQUEST_LANGUAGE.reset(token)
     path = request.url.path
     if path.startswith("/api/custom-"):
         response.headers["Cache-Control"] = "private, no-store"
@@ -412,6 +438,8 @@ def bootstrap(decrypted_userinfo: Optional[str] = Header(None, alias="Decrypted-
     if isinstance(snapshot, str):
         snapshot = json.loads(snapshot)
     snapshot = migrate_snapshot(snapshot)
+    if snapshot and REQUEST_LANGUAGE.get() is not None:
+        snapshot = set_snapshot_language(snapshot, REQUEST_LANGUAGE.get())
     return JSONResponse({
         "user": user, "characters": CHARACTERS, "view": project_view(snapshot) if snapshot else None,
         "rosterPolicy": {"librarySize": len(CHARACTERS), "runCastSize": 8, "selectionOrder": ["mbti", "gender", "character"]},
@@ -438,7 +466,8 @@ async def start_run(body: dict, decrypted_userinfo: Optional[str] = Header(None,
         raise HTTPException(status_code=400, detail="请选择一位有效的观察人物")
     if (custom_card or CHARACTER_MAP[perspective_character_id])["mbti"] != mbti:
         raise HTTPException(status_code=400, detail="所选 MBTI 与观察人物不一致，请先选 MBTI 再选对应角色")
-    snapshot = create_snapshot(mbti, perspective_character_id, custom_player_card=custom_card) if custom_card else create_snapshot(mbti, perspective_character_id)
+    language = normalize_language(body.get("language") or REQUEST_LANGUAGE.get())
+    snapshot = create_snapshot(mbti, perspective_character_id, custom_player_card=custom_card, language=language)
     snapshot = await _generate_day1_script(snapshot, selected_provider)
     with _get_db_conn() as conn:
         conn.execute(
@@ -513,8 +542,8 @@ async def agent_message(run_id: str, character_id: str, body: dict, decrypted_us
     if not character:
         raise HTTPException(status_code=404, detail="没有这位嘉宾")
     message = str(body.get("message") or "").strip()
-    if not message or len(message) > 240:
-        raise HTTPException(status_code=400, detail="请输入 1-240 个字")
+    if not message or len(message) > (600 if REQUEST_LANGUAGE.get() == "en" else 240):
+        raise HTTPException(status_code=400, detail="Please enter 1-600 characters" if REQUEST_LANGUAGE.get() == "en" else "请输入 1-240 个字")
     _enforce_agent_rate_limit(user["userId"])
     try:
         expected_revision = int(body.get("revision"))
@@ -631,8 +660,8 @@ async def group_message(run_id: str, body: dict, decrypted_userinfo: Optional[st
     user = _require_user(decrypted_userinfo, x_client_id)
     selected_provider = _request_provider(x_llm_provider, required=True)
     message = str(body.get("message") or "").strip()
-    if not message or len(message) > 240:
-        raise HTTPException(status_code=400, detail="请输入 1-240 个字")
+    if not message or len(message) > (600 if REQUEST_LANGUAGE.get() == "en" else 240):
+        raise HTTPException(status_code=400, detail="Please enter 1-600 characters" if REQUEST_LANGUAGE.get() == "en" else "请输入 1-240 个字")
     try:
         expected_revision = int(body.get("revision"))
     except (TypeError, ValueError):

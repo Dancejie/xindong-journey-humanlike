@@ -1,0 +1,25 @@
+{
+  "date": "2026-10-15",
+  "scope": "English adaptation of the latest standalone Heart Journey R11, including all 32 preset characters, all 16 MBTI types and private custom players",
+  "sourceCommit": "84fb70d5250aafc8302bd7a998d97bd69a3ec541",
+  "canonStatus": "All speaking guests are original fictional characters. Public-domain literature informs behavior research only; none is performed as a canon character or quoted as dialogue.",
+  "preserved": ["Stable character and choice IDs", "Eight-person four-male/four-female session roster", "Original individual occupations, disclosed facts, boundaries and personal reasons", "Deterministic route, relationship limits and private character memories", "All existing approved media and custom-video cost controls"],
+  "edits": ["Natural English interface, character profiles, authored story, choices, heart messages and event copy", "English language contracts and validators across character, opening, contextual story, Director and custom-profile generation", "Persistent language selection and explicit English link", "Verbatim user names, profile inputs and historical quotations protected from dictionary localization"],
+  "comparison": [
+    {"work":"顾时夜·石壁后有风","difference":"Mine collapse, maps, light and rescue routes remain specific to that work; no rescue plot imported."},
+    {"work":"玉簟秋·宴上不成双","difference":"Public banquet and naming conflict are not substituted into the dating-show opening."},
+    {"work":"斯内普·雾灯魔药铺","difference":"Stock, shop margins and experiments do not become guest biographies or dinner tasks."},
+    {"work":"美人余·不卖恩爱了","difference":"Existing-marriage livestream and ring removal differ from first meetings among strangers."},
+    {"work":"兰香·三妹妹回娘家","difference":"Family pressure, children and carriage decisions remain outside this island-house story."},
+    {"work":"柏源·双打搭档","difference":"Tennis positions and signals are not reused as generic romance choices."},
+    {"work":"许墨·陪我看场电影","difference":"Ticket and drawing callbacks are not imported; Heart Journey recalls actual player conversation and messages."},
+    {"work":"沈星回·这块蛋糕有点歪","difference":"Established-couple home/cake plot differs from the newcomer ensemble and first dinner."},
+    {"work":"哈利·站我旁边","difference":"Defense practice and stop signals remain source-specific; no repeated permission speeches added."},
+    {"work":"郑蔓宜·父亲先跪下了","difference":"Uprising and departure stakes do not become a name-swapped dating-show event."},
+    {"work":"魔鬼恋人·第一夜","difference":"Vampire-house escape and route clues are not used as the default hotel opening."},
+    {"work":"沈星回·陛下抬灯","difference":"Star-chart damage, rain and observation remain separate from the original shared-living premise."},
+    {"work":"夏以昼ABO·延误两小时","difference":"Flight delays and pending recall are not copied into the island arrival."},
+    {"work":"祁煜ABO","difference":"Misprinted-label and knocking-order verification is not used for this English adaptation."}
+  ],
+  "reviewBoundary": "Translation revision only. No new plot, paid media generation, canonical voice-reference claim, DOCX formatting pass or full seven-day season completion is implied. Existing videos retain their original audio."
+}

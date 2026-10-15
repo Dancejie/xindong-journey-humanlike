@@ -644,3 +644,31 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid rgba(255, 211,
   .message-stream { scroll-behavior: auto; }
   .story-card--narration-exit { transform: none; }
 }
+
+/* Language controls stay within existing headers, including narrow phones. */
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.language-control { display: inline-flex; flex-shrink: 0; align-items: center; }
+.language-control select { width: 56px; min-height: 32px; padding: 4px 3px 4px 7px; border: 1px solid rgba(255,255,255,.25); border-radius: 7px; background: rgba(28,19,30,.65); color: #fff; font-size: 11px; font-family: inherit; }
+.language-control select:focus-visible { outline: 2px solid #f5caba; outline-offset: 3px; }
+.language-control select:disabled { opacity: .55; }
+.landing-topbar { gap: 7px; }
+.landing-topbar > span:first-child { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.landing-topbar--provider { grid-template-columns: minmax(0,1fr) auto auto auto; }
+.game-topbar { grid-template-columns: 105px minmax(12px,1fr) 56px 38px; gap: 7px; padding-inline: 14px; }
+.game-topbar--provider { grid-template-columns: 88px minmax(8px,1fr) 76px 56px 32px; gap: 5px; }
+.utility-language { position: absolute; top: calc(16px + env(safe-area-inset-top)); right: 16px; }
+html[lang="en"] .title-lockup h1 { max-width: 290px; font-size: clamp(46px, 13vw, 66px); letter-spacing: -.035em; }
+html[lang="en"] .title-lockup .heart-mark { right: -29px; top: 7px; transform: scale(.75); }
+html[lang="en"] .title-lockup > p { font-size: 17px; letter-spacing: .03em; }
+html[lang="en"] .title-lockup > p::before, html[lang="en"] .title-lockup > p::after { width: 16px; margin-inline: 6px; }
+html[lang="en"] .game-topbar > div:first-child span { letter-spacing: 0; font-size: 12px; }
+html[lang="en"] .selection-title { letter-spacing: -.02em; }
+html[lang="en"] .selection-step-heading { align-items: flex-start; gap: 10px; }
+html[lang="en"] .selection-step-heading small { text-align: right; }
+html[lang="en"] .icebreaker-card__action b, html[lang="en"] .choice-copy strong { overflow-wrap: anywhere; }
+.game-topbar--provider .llm-provider-control { width: 76px; }
+.utility-language { z-index: 2; }
+html[lang="en"] .landing-overline { font-size: 11px; letter-spacing: .08em; line-height: 1.7; }
+html[lang="en"] .loading-screen p { letter-spacing: .04em; }
+html[lang="en"] .custom-character-heading h1 { letter-spacing: -.015em; }
+html[lang="en"] .custom-character-topbar > span { min-width: 0; text-align: center; font-size: 10px; }
